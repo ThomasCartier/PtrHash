@@ -42,6 +42,8 @@ sucds = "0.8.0"
 tempfile = "3.8.1"
 fastrand = "2.0.1"
 
+cacheline-ef = { git = "https://github.com/ragnargrootkoerkamp/cacheline-ef" }
+
 # Default included hash functions
 cityhash-102-rs = "0.1.0"
 fastmurmur3 = "0.2.0"

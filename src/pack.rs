@@ -1,6 +1,6 @@
 use sucds::mii_sequences::EliasFanoBuilder;
 
-use crate::local_ef::{LocalEf, LocalEfUnit};
+use cacheline_ef::{CachelineEf, CachelineEfVec};
 
 /// A trait for backing storage types.
 pub trait Packed: Sync {
@@ -73,7 +73,7 @@ slice_impl!(u16);
 slice_impl!(u32);
 slice_impl!(u64);
 
-impl MutPacked for LocalEf<Vec<LocalEfUnit>> {
+impl MutPacked for CachelineEfVec<Vec<CachelineEf>> {
     fn default() -> Self {
         Default::default()
     }
@@ -82,7 +82,7 @@ impl MutPacked for LocalEf<Vec<LocalEfUnit>> {
     }
 }
 
-impl<T: AsRef<[LocalEfUnit]> + Sync> Packed for LocalEf<T> {
+impl<T: AsRef<[CachelineEf]> + Sync> Packed for CachelineEfVec<T> {
     fn index(&self, index: usize) -> u64 {
         self.index(index)
     }

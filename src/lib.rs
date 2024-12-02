@@ -38,8 +38,6 @@
 
 /// Customizable Hasher trait.
 pub mod hash;
-/// Reusable Tiny Elias-Fano implementation.
-pub mod local_ef;
 /// Extendable backing storage trait and types.
 pub mod pack;
 /// Some internal logging and testing utilities.
@@ -55,10 +53,10 @@ mod stats;
 mod test;
 
 use bitvec::{bitvec, vec::BitVec};
+use cacheline_ef::CachelineEfVec;
 use either::Either;
 use itertools::izip;
 use itertools::Itertools;
-use local_ef::LocalEf;
 use pack::EliasFano;
 use pack::MutPacked;
 use rand::{random, Rng, SeedableRng};
@@ -134,7 +132,7 @@ impl Default for PtrHashParams {
 
 /// An alias for PtrHash with default generic arguments.
 /// Using this, you can write `DefaultPtrHash::new()` instead of `<PtrHash>::new()`.
-pub type DefaultPtrHash<H, Key> = PtrHash<Key, LocalEf, H, Vec<u8>>;
+pub type DefaultPtrHash<H, Key> = PtrHash<Key, CachelineEfVec, H, Vec<u8>>;
 
 /// Using EliasFano for the remap is slower but uses slightly less memory.
 pub type EfPtrHash<H, Key> = PtrHash<Key, EliasFano, H, Vec<u8>>;
@@ -165,7 +163,7 @@ const SPLIT_BUCKETS: bool = false;
 #[derive(Clone)]
 pub struct PtrHash<
     Key: KeyT = u64,
-    F: Packed = LocalEf,
+    F: Packed = CachelineEfVec,
     Hx: Hasher<Key> = hash::FxHash,
     V: AsRef<[u8]> = Vec<u8>,
 > {
