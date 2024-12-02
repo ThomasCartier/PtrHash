@@ -46,7 +46,7 @@ pub mod util;
 
 pub mod bucket_fn;
 mod bucket_idx;
-mod evict;
+mod build;
 mod reduce;
 mod shard;
 mod sort_buckets;

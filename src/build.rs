@@ -3,7 +3,6 @@ use crate::{bucket_idx::BucketIdx, stats::BucketStats};
 use bitvec::{slice::BitSlice, vec::BitVec};
 use rayon::prelude::*;
 use std::{
-    cell::{Cell, LazyCell, RefCell},
     collections::BinaryHeap,
     iter::zip,
     sync::{
@@ -122,12 +121,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
 
         let mut rng = fastrand::Rng::new();
 
-        thread_local! {
-        static EVICTION_COUNTS: RefCell<Vec<usize>> = RefCell::new(vec![]);
-        }
-        if self.params.print_stats {
-            EVICTION_COUNTS.with(|d| d.borrow_mut().clear());
-        }
+        let mut eviction_counts: Vec<usize> = vec![];
 
         for (i, &new_b) in bucket_order.iter().enumerate() {
             let new_bucket = &hashes[starts[new_b] as usize..starts[new_b + 1] as usize];
@@ -294,24 +288,21 @@ Try increasing c to use more buckets.
             }
             total_evictions += evictions;
             if self.params.print_stats {
-                EVICTION_COUNTS.with(|d| d.borrow_mut().push(evictions));
+                eviction_counts.push(evictions);
             }
         }
 
         if self.params.print_stats {
             let mut stats = stats.lock().unwrap();
-            EVICTION_COUNTS.with(|d| {
-                let d = d.borrow();
-                for (i, &b) in bucket_order.iter().enumerate() {
-                    stats.add(
-                        i,
-                        bucket_order.len(),
-                        bucket_len(b),
-                        pilots[b] as Pilot,
-                        d[i],
-                    );
-                }
-            });
+            for (i, &b) in bucket_order.iter().enumerate() {
+                stats.add(
+                    i,
+                    bucket_order.len(),
+                    bucket_len(b),
+                    pilots[b] as Pilot,
+                    *eviction_counts.get(i).unwrap_or(&0),
+                );
+            }
         }
 
         Some(total_evictions)

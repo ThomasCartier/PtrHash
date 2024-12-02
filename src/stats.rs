@@ -7,6 +7,7 @@ struct Row {
     pilot_sum: Pilot,
     pilot_max: Pilot,
     evictions: usize,
+    evictions_max: usize,
 }
 
 impl Row {
@@ -14,8 +15,9 @@ impl Row {
         self.buckets += 1;
         self.elements += bucket_len;
         self.pilot_sum += pilot;
-        self.evictions += evictions;
         self.pilot_max = self.pilot_max.max(pilot);
+        self.evictions += evictions;
+        self.evictions_max = self.evictions_max.max(evictions);
     }
 }
 
@@ -51,8 +53,8 @@ impl BucketStats {
     pub fn print(&self) {
         eprintln!();
         Self::print_rows(&self.by_pct, false);
-        eprintln!();
-        Self::print_rows(&self.by_bucket_len, true);
+        // eprintln!();
+        // Self::print_rows(&self.by_bucket_len, true);
         eprintln!();
     }
 
@@ -61,8 +63,17 @@ impl BucketStats {
         let n = rows.iter().map(|r| r.elements).sum::<usize>();
 
         eprintln!(
-            "{:>4}  {:>11} {:>7} {:>6} {:>6} {:>6} {:>10} {:>10}",
-            "sz", "cnt", "bucket%", "cuml%", "elem%", "cuml%", "avg p", "max p"
+            "{:>4}  {:>11} {:>7} {:>6} {:>6} {:>6} {:>10} {:>10} {:>10} {:>10}",
+            "sz",
+            "cnt",
+            "bucket%",
+            "cuml%",
+            "elem%",
+            "cuml%",
+            "avg p",
+            "max p",
+            "avg evict",
+            "max evict"
         );
         let mut bucket_cuml = 0;
         let mut elem_cuml = 0;
@@ -73,8 +84,8 @@ impl BucketStats {
             bucket_cuml += row.buckets;
             elem_cuml += row.elements;
             eprintln!(
-                "{:>4}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10}",
-                row.elements / row.buckets,
+                "{:>4}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10} {:>10.5} {:>10}",
+                (row.elements + row.buckets - 1) / row.buckets,
                 row.buckets,
                 row.buckets as f32 / b_total as f32 * 100.,
                 bucket_cuml as f32 / b_total as f32 * 100.,
@@ -82,6 +93,8 @@ impl BucketStats {
                 elem_cuml as f32 / n as f32 * 100.,
                 row.pilot_sum as f32 / row.buckets as f32,
                 row.pilot_max,
+                row.evictions as f32 / row.buckets as f32,
+                row.evictions_max
             );
         };
         if reverse {
@@ -91,8 +104,10 @@ impl BucketStats {
         }
         let sum_pilots = rows.iter().map(|r| r.pilot_sum).sum::<Pilot>();
         let max_pilot = rows.iter().map(|r| r.pilot_max).max().unwrap();
+        let sum_evictions = rows.iter().map(|r| r.evictions).sum::<usize>();
+        let max_evictions = rows.iter().map(|r| r.evictions_max).max().unwrap();
         eprintln!(
-            "{:>4}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10}",
+            "{:>4}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10} {:>10.5} {:>10}",
             "",
             b_total,
             100.,
@@ -100,7 +115,9 @@ impl BucketStats {
             100.,
             100.,
             sum_pilots as f32 / b_total as f32,
-            max_pilot
+            max_pilot,
+            sum_evictions as f32 / b_total as f32,
+            max_evictions
         );
     }
 }
