@@ -29,11 +29,8 @@ pub fn prefetch_index<T>(s: &[T], index: usize) {
 }
 
 thread_local! {
-    static LOG: std::cell::Cell<bool> = std::cell::Cell::new(false);
-}
-
-pub(crate) fn has_log() -> bool {
-    LOG.with(|log| log.get())
+    /// TODO: Use trace! instead.
+    static LOG: std::cell::Cell<bool> = std::cell::Cell::new(true);
 }
 
 pub(crate) fn log_duration(name: &str, start: Instant) -> Instant {
