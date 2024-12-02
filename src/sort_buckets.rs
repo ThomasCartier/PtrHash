@@ -3,7 +3,7 @@ use crate::bucket_idx::BucketIdx;
 use rdst::RadixSort;
 use std::time::Instant;
 
-impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
+impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx> {
     /// Returns:
     /// 1. Hashes
     /// 2. Start indices of each bucket.

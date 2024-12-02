@@ -8,7 +8,7 @@ use std::{
 
 use super::*;
 
-impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
+impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx> {
     /// Return an iterator over shards.
     /// For each shard, a filtered copy of the ParallelIterator is returned.
     pub(crate) fn no_sharding<'a>(

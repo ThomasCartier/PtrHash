@@ -12,7 +12,7 @@ use std::{
     },
 };
 
-impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
+impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx> {
     pub(super) fn build_shard(
         &self,
         shard: usize,

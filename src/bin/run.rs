@@ -1,4 +1,5 @@
 #![allow(unused)]
+use bucket_fn::{BucketFn, Linear};
 use cacheline_ef::CachelineEfVec;
 use clap::{Parser, Subcommand};
 #[cfg(feature = "epserde")]
@@ -77,7 +78,7 @@ enum Command {
     },
 }
 
-type PH<Key> = PtrHash<Key, CachelineEfVec, hash::FxHash, Vec<u8>>;
+type PH<Key, BF> = PtrHash<Key, BF, CachelineEfVec, hash::FxHash, Vec<u8>>;
 
 fn main() -> anyhow::Result<()> {
     let Args { command } = Args::parse();
@@ -98,7 +99,7 @@ fn main() -> anyhow::Result<()> {
                 .build_global()
                 .unwrap();
             let keys = ptr_hash::util::generate_keys(n);
-            let pt = PH::new(
+            let pt = PH::<_, Linear>::new(
                 &keys,
                 PtrHashParams {
                     c,
@@ -168,7 +169,7 @@ fn main() -> anyhow::Result<()> {
                 // benchmark_queries::<18, _, _, _, _>(total, &keys, &pt);
                 // benchmark_queries::<20, _, _, _, _>(total, &keys, &pt);
                 // benchmark_queries::<24, _, _, _, _>(total, &keys, &pt);
-                benchmark_queries::<32, _, _, _, _>(total, &keys, &pt);
+                benchmark_queries::<32, _, _, _, _, _>(total, &keys, &pt);
                 // benchmark_queries::<48, _, _, _, _>(total, &keys, &pt);
                 // benchmark_queries::<64, _, _, _, _>(total, &keys, &pt);
                 // bench_hashers(total, &params, &keys);
@@ -183,7 +184,7 @@ fn bench_hashers<Key: KeyT>(total: usize, params: &PtrHashParams, keys: &[Key]) 
     let n = keys.len();
     let loops = total.div_ceil(n);
     fn test<H: Hasher<Key>, Key: KeyT>(loops: usize, keys: &[Key], params: &PtrHashParams) {
-        type PH<Key, H> = PtrHash<Key, CachelineEfVec, H, Vec<u8>>;
+        type PH<Key, H> = PtrHash<Key, Linear, CachelineEfVec, H, Vec<u8>>;
         let pt = PH::<Key, H>::new_random(keys.len(), *params);
 
         let query = bench_index(loops, keys, |key| pt.index(key));
@@ -229,12 +230,13 @@ fn benchmark_queries<
     const A: usize,
     Key: KeyT,
     H: Hasher<Key>,
+    BF: BucketFn,
     T: Packed,
     V: AsRef<[u8]> + Sync,
 >(
     total: usize,
     keys: &[Key],
-    pt: &PtrHash<Key, T, H, V>,
+    pt: &PtrHash<Key, BF, T, H, V>,
 ) {
     let n = keys.len();
     let loops = total.div_ceil(n);
@@ -258,7 +260,7 @@ fn benchmark_queries<
         // });
         // eprintln!(" ({A}t{threads}/r/b)  : {query:>5.2}ns");
         let query = time(loops, keys, || {
-            index_parallel::<A, _, _, _, _>(pt, keys, threads, false, false)
+            index_parallel::<A, _, _, _, _, _>(pt, keys, threads, false, false)
         });
         eprintln!(" ({A:2}t{threads}/ /s)  : {query:>5.2}ns");
         // let query = time(loops, keys, || {
@@ -296,8 +298,15 @@ where
 }
 
 /// Wrapper around `index_stream` that runs multiple threads.
-fn index_parallel<const A: usize, Key: KeyT, T: Packed, H: Hasher<Key>, V: AsRef<[u8]> + Sync>(
-    pt: &PtrHash<Key, T, H, V>,
+fn index_parallel<
+    const A: usize,
+    Key: KeyT,
+    BF: BucketFn,
+    T: Packed,
+    H: Hasher<Key>,
+    V: AsRef<[u8]> + Sync,
+>(
+    pt: &PtrHash<Key, BF, T, H, V>,
     xs: &[Key],
     threads: usize,
     minimal: bool,

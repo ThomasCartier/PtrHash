@@ -44,6 +44,7 @@ pub mod pack;
 /// Some internal logging and testing utilities.
 pub mod util;
 
+pub mod bucket_fn;
 mod bucket_idx;
 mod evict;
 mod reduce;
@@ -54,6 +55,7 @@ mod stats;
 mod test;
 
 use bitvec::{bitvec, vec::BitVec};
+use bucket_fn::BucketFn;
 use cacheline_ef::CachelineEfVec;
 use either::Either;
 use itertools::izip;
@@ -164,6 +166,7 @@ const SPLIT_BUCKETS: bool = false;
 #[derive(Clone)]
 pub struct PtrHash<
     Key: KeyT = u64,
+    BF: BucketFn = bucket_fn::Linear,
     F: Packed = CachelineEfVec,
     Hx: Hasher<Key> = hash::FxHash,
     V: AsRef<[u8]> = Vec<u8>,
@@ -222,10 +225,11 @@ pub struct PtrHash<
     remap: F,
     _key: PhantomData<Key>,
     _hx: PhantomData<Hx>,
+    _bf: PhantomData<BF>,
 }
 
 /// Construction methods.
-impl<Key: KeyT, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, F, Hx, Vec<u8>> {
+impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx, Vec<u8>> {
     /// Create a new PtrHash instance from the given keys.
     ///
     /// NOTE: Only up to 2^40 keys are supported.
@@ -374,6 +378,7 @@ impl<Key: KeyT, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, F, Hx, Vec<u8>> {
             remap: F::default(),
             _key: PhantomData,
             _hx: PhantomData,
+            _bf: PhantomData,
         }
     }
 
@@ -501,7 +506,9 @@ impl<Key: KeyT, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, F, Hx, Vec<u8>> {
 }
 
 /// Indexing methods.
-impl<Key: KeyT, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>> PtrHash<Key, F, Hx, V> {
+impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
+    PtrHash<Key, BF, F, Hx, V>
+{
     /// Return the number of bits per element used for the pilots (`.0`) and the
     /// remapping (`.1)`.
     pub fn bits_per_element(&self) -> (f32, f32) {
