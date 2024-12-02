@@ -1,3 +1,4 @@
+#![feature(iter_array_chunks)]
 //! PTRHash is a minimal perfect hash function.
 //!
 //! Usage example:
@@ -606,6 +607,44 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>> PtrHash<Key, F, Hx, 
                 slot
             }
         })
+    }
+
+    /// Takes an iterator over keys and returns an iterator over the indices of the keys.
+    ///
+    /// Queries in batches of size K.
+    ///
+    /// NOTE: Does not process the remainder
+    #[inline]
+    pub fn index_batch_exact<'a, const K: usize, const MINIMAL: bool>(
+        &'a self,
+        xs: impl IntoIterator<Item = &'a Key> + 'a,
+    ) -> impl Iterator<Item = usize> + 'a {
+        let mut buckets: [usize; K] = [0; K];
+
+        // Work on chunks of size K.
+        let mut f = move |hx: [Hx::H; K]| {
+            // Prefetch.
+            for idx in 0..K {
+                buckets[idx] = self.bucket(hx[idx]);
+                crate::util::prefetch_index(self.pilots.as_ref(), buckets[idx]);
+            }
+            // Query.
+            (0..K).map(move |idx| {
+                let pilot = self.pilots.as_ref().index(buckets[idx]);
+                let slot = self.slot(hx[idx], pilot);
+                if MINIMAL && slot >= self.n {
+                    self.remap.index(slot - self.n) as usize
+                } else {
+                    slot
+                }
+            })
+        };
+        let array_chunks = xs.into_iter().map(|x| self.hash_key(x)).array_chunks::<K>();
+        array_chunks.into_iter().flat_map(move |chunk| f(chunk))
+        // .chain(f(&array_chunks
+        //     .into_remainder()
+        //     .unwrap_or_default()
+        //     .into_iter()))
     }
 
     fn hash_key(&self, x: &Key) -> Hx::H {

@@ -37,6 +37,17 @@ fn index_stream() {
 }
 
 #[test]
+fn index_batch() {
+    for n in [10usize, 100, 1000, 10_000, 100_000, 1_000_000] {
+        let n = n.next_multiple_of(32);
+        let keys = generate_keys(n);
+        let ptr_hash = <PtrHash>::new(&keys, Default::default());
+        let sum = ptr_hash.index_batch_exact::<32, true>(&keys).sum::<usize>();
+        assert_eq!(sum, (n * (n - 1)) / 2);
+    }
+}
+
+#[test]
 fn new_par_iter() {
     let n = 10_000_000;
     let keys = generate_keys(n);
