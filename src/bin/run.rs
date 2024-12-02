@@ -155,9 +155,23 @@ fn main() -> anyhow::Result<()> {
                 #[cfg(feature = "epserde")]
                 let pt = <PtrHash>::mmap("pt.bin", Flags::default())?;
                 #[cfg(not(feature = "epserde"))]
-                // let pt = <PtrHash>::new_random(n, params);
-                // benchmark_queries(total, &keys, &pt);
-                bench_hashers(total, &params, &keys);
+                let pt = <PtrHash>::new_random(n, params);
+                // benchmark_queries::<1, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<2, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<3, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<4, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<8, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<10, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<12, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<14, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<16, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<18, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<20, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<24, _, _, _, _>(total, &keys, &pt);
+                benchmark_queries::<32, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<48, _, _, _, _>(total, &keys, &pt);
+                // benchmark_queries::<64, _, _, _, _>(total, &keys, &pt);
+                // bench_hashers(total, &params, &keys);
             }
         }
     }
@@ -211,7 +225,13 @@ fn bench_hashers<Key: KeyT>(total: usize, params: &PtrHashParams, keys: &[Key]) 
     test::<hash::Spooky128, _>(loops, keys, params);
 }
 
-fn benchmark_queries<Key: KeyT, H: Hasher<Key>, T: Packed, V: AsRef<[u8]> + Sync>(
+fn benchmark_queries<
+    const A: usize,
+    Key: KeyT,
+    H: Hasher<Key>,
+    T: Packed,
+    V: AsRef<[u8]> + Sync,
+>(
     total: usize,
     keys: &[Key],
     pt: &PtrHash<Key, T, H, V>,
@@ -219,43 +239,33 @@ fn benchmark_queries<Key: KeyT, H: Hasher<Key>, T: Packed, V: AsRef<[u8]> + Sync
     let n = keys.len();
     let loops = total.div_ceil(n);
 
-    eprintln!("BENCHMARKING loops {loops}");
-    let query = bench_index(loops, keys, |key| pt.index(key));
-    eprintln!(" ( 1  )  : {query:>4.1}");
-    let query = bench_index(loops, keys, |key| pt.index_minimal(key));
-    eprintln!(" ( 1  )+r: {query:>4.1}");
+    eprintln!("BENCHMARKING A={A}\t loops {loops}");
 
-    // let query = bench_index_all(loops, keys, |keys| pt.index_stream::<32>(keys));
-    // eprint!(" (32): {query:>4.1}");
-    // let query = bench_index_all(loops, keys, |keys| pt.index_stream::<1>(keys));
-    // eprintln!(" (1): {query:>4.1}");
-    // let query = time(loops, keys, || pt.index_stream::<64>(&keys).sum());
-    // eprint!(" (64): {query:>4.1}");
-    for threads in 1..=6 {
-        let query = time(loops, keys, || {
-            index_parallel::<64, _, _, _, _>(pt, keys, threads, false)
-        });
-        eprintln!(" (64t{threads})  : {query:>5.2}ns");
-        let query = time(loops, keys, || {
-            index_parallel::<64, _, _, _, _>(pt, keys, threads, true)
-        });
-        eprintln!(" (64t{threads})+r: {query:>5.2}ns");
+    if A == 1 {
+        // let query = bench_index(loops, keys, |key| pt.index_minimal(key));
+        // eprintln!(" ( 1  /r/ ): {query:>5.2}");
+        let query = bench_index(loops, keys, |key| pt.index(key));
+        eprintln!(" ( 1  / / )  : {query:>5.2}ns");
     }
-    // let query = bench_index_all(loops, keys, |keys| pt.index_stream::<128>(keys));
-    // eprint!(" (128): {query:>4.1}");
 
-    // eprint!("    | Remap: ");
-
-    // let query = bench_index(loops, keys, |key| pt.index_minimal(key));
-    // eprint!(" (1): {query:>4.1}");
-
-    // let query = bench_index_all(loops, keys, |keys| pt.index_minimal_stream::<32>(keys));
-    // eprint!(" (32): {query:>4.1}");
-    // let query = bench_index_all(loops, keys, |keys| pt.index_minimal_stream::<64>(keys));
-    // eprint!(" (64): {query:>4.1}");
-    // let query = bench_index_all(loops, keys, |keys| pt.index_minimal_stream::<128>(keys));
-    // eprint!(" (128): {query:>4.1}");
-    // eprintln!();
+    for threads in [1] {
+        // let query = time(loops, keys, || {
+        //     index_parallel::<A, _, _, _, _>(pt, keys, threads, true, false)
+        // });
+        // eprintln!(" ({A}t{threads}/r/s)  : {query:>5.2}ns");
+        // let query = time(loops, keys, || {
+        //     index_parallel::<A, _, _, _, _>(pt, keys, threads, true, true)
+        // });
+        // eprintln!(" ({A}t{threads}/r/b)  : {query:>5.2}ns");
+        let query = time(loops, keys, || {
+            index_parallel::<A, _, _, _, _>(pt, keys, threads, false, false)
+        });
+        eprintln!(" ({A:2}t{threads}/ /s)  : {query:>5.2}ns");
+        // let query = time(loops, keys, || {
+        //     index_parallel::<A, _, _, _, _>(pt, keys, threads, false, true)
+        // });
+        // eprintln!(" ({A:2}t{threads}/ /b)  : {query:>5.2}ns");
+    }
 }
 
 #[must_use]
@@ -277,9 +287,11 @@ where
     F: Fn() -> usize,
 {
     let start = SystemTime::now();
+    let mut sum = 0;
     for _ in 0..loops {
-        black_box(f());
+        sum += f();
     }
+    black_box(sum);
     start.elapsed().unwrap().as_nanos() as f32 / (loops * keys.len()) as f32
 }
 
@@ -289,6 +301,7 @@ fn index_parallel<const A: usize, Key: KeyT, T: Packed, H: Hasher<Key>, V: AsRef
     xs: &[Key],
     threads: usize,
     minimal: bool,
+    batch: bool,
 ) -> usize {
     let chunk_size = xs.len().div_ceil(threads);
     let sum = AtomicUsize::new(0);
@@ -300,13 +313,24 @@ fn index_parallel<const A: usize, Key: KeyT, T: Packed, H: Hasher<Key>, V: AsRef
                 let start_idx = thread_idx * chunk_size;
                 let end = min((thread_idx + 1) * chunk_size, xs.len());
 
-                let thread_sum = if minimal {
-                    pt.index_stream::<A, true>(&xs[start_idx..end])
-                        .sum::<usize>()
+                let thread_sum = if batch {
+                    if minimal {
+                        pt.index_batch_exact::<A, true>(&xs[start_idx..end])
+                            .sum::<usize>()
+                    } else {
+                        pt.index_batch_exact::<A, false>(&xs[start_idx..end])
+                            .sum::<usize>()
+                    }
                 } else {
-                    pt.index_stream::<A, false>(&xs[start_idx..end])
-                        .sum::<usize>()
+                    if minimal {
+                        pt.index_stream::<A, true>(&xs[start_idx..end])
+                            .sum::<usize>()
+                    } else {
+                        pt.index_stream::<A, false>(&xs[start_idx..end])
+                            .sum::<usize>()
+                    }
                 };
+
                 sum.fetch_add(thread_sum, Ordering::Relaxed);
             });
         }
