@@ -65,10 +65,10 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         for (part, (start, end)) in part_starts.iter().tuple_windows().enumerate() {
             let len = end - start;
             max_part_len = max_part_len.max(len);
-            if len as usize > self.s {
+            if len as usize > self.slots {
                 eprintln!(
                     "Shard {shard} Part {part}: More elements than slots! elements {len} > {} slots",
-                    self.s
+                    self.slots
                 );
                 return None;
             }
@@ -77,7 +77,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             eprintln!("max key/part: {max_part_len:>10}",);
             eprintln!(
                 "max    alpha: {:>13.2}%",
-                100. * max_part_len as f32 / self.s as f32
+                100. * max_part_len as f32 / self.slots as f32
             );
         }
 
@@ -89,10 +89,10 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
     // Sort the buckets in the given part and corresponding range of hashes.
     pub(super) fn sort_buckets(&self, part: usize, hashes: &[Hx::H]) -> (Vec<u32>, Vec<BucketIdx>) {
         // Where each bucket starts in hashes.
-        let mut bucket_starts = Vec::with_capacity(self.b + 1);
+        let mut bucket_starts = Vec::with_capacity(self.buckets + 1);
 
         // The order of buckets, from large to small.
-        let mut order: Vec<BucketIdx> = vec![BucketIdx::NONE; self.b];
+        let mut order: Vec<BucketIdx> = vec![BucketIdx::NONE; self.buckets];
 
         // The number of buckets of each length.
         let mut bucket_len_cnt = vec![0; 32];
@@ -101,10 +101,10 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         bucket_starts.push(end as u32);
 
         // Loop over buckets in part, setting start positions and counting # buckets of each size.
-        for b in 0..self.b {
+        for b in 0..self.buckets {
             let start = end;
             // NOTE: Many branch misses here.
-            while end < hashes.len() && self.bucket(hashes[end]) == part * self.b + b {
+            while end < hashes.len() && self.bucket(hashes[end]) == part * self.buckets + b {
                 end += 1;
             }
 
@@ -121,7 +121,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         let max_bucket_size = bucket_len_cnt.len() - 1;
         // This assert is disabled, because it only holds when using uniform buckets.
         if false {
-            let expected_bucket_size = self.s as f32 / self.b as f32;
+            let expected_bucket_size = self.slots as f32 / self.buckets as f32;
             assert!(max_bucket_size <= (20. * expected_bucket_size) as usize, "Part {part}: Bucket size {max_bucket_size} is too much larger than the expected size of {expected_bucket_size}." );
         }
 
@@ -134,7 +134,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         }
 
         // Write buckets to their right location.
-        for b in BucketIdx::range(self.b) {
+        for b in BucketIdx::range(self.buckets) {
             let l = (bucket_starts[b + 1] - bucket_starts[b]) as usize;
             order[bucket_len_cnt[l]] = b;
             bucket_len_cnt[l] += 1;

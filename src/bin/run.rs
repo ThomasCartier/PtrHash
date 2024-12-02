@@ -24,7 +24,7 @@ struct Args {
     command: Command,
 }
 
-const DEFAULT_C: f64 = 9.0;
+const DEFAULT_LAMBDA: f64 = 5.0;
 const DEFAULT_ALPHA: f64 = 0.98;
 const DEFAULT_SLOTS_PER_PART: usize = 1 << 18;
 const DEFAULT_KEYS_PER_SHARD: usize = 1 << 33;
@@ -36,8 +36,8 @@ enum Command {
     Build {
         #[arg(short)]
         n: usize,
-        #[arg(short, default_value_t = DEFAULT_C)]
-        c: f64,
+        #[arg(short, default_value_t = DEFAULT_LAMBDA)]
+        lambda: f64,
         #[arg(short, default_value_t = DEFAULT_ALPHA)]
         alpha: f64,
         #[arg(short, default_value_t = DEFAULT_SLOTS_PER_PART)]
@@ -59,8 +59,8 @@ enum Command {
         /// Path to file containing one key per line.
         #[arg(long)]
         keys: Option<PathBuf>,
-        #[arg(short, default_value_t = DEFAULT_C)]
-        c: f64,
+        #[arg(short, default_value_t = DEFAULT_LAMBDA)]
+        lambda: f64,
         #[arg(short, default_value_t = DEFAULT_ALPHA)]
         alpha: f64,
         #[arg(short, default_value_t = DEFAULT_SLOTS_PER_PART)]
@@ -80,8 +80,8 @@ enum Command {
     BucketFn {
         #[arg(short)]
         n: usize,
-        #[arg(short, default_value_t = DEFAULT_C)]
-        c: f64,
+        #[arg(short, default_value_t = DEFAULT_LAMBDA)]
+        lambda: f64,
         #[arg(short, default_value_t = DEFAULT_ALPHA)]
         alpha: f64,
         #[arg(short, default_value_t = DEFAULT_SLOTS_PER_PART)]
@@ -107,7 +107,7 @@ fn main() -> anyhow::Result<()> {
     match command {
         Command::Build {
             n,
-            c,
+            lambda,
             alpha,
             stats,
             s,
@@ -123,7 +123,7 @@ fn main() -> anyhow::Result<()> {
             let pt = PH::<_, Linear>::new(
                 &keys,
                 PtrHashParams {
-                    c,
+                    lambda,
                     alpha,
                     print_stats: stats,
                     slots_per_part: s,
@@ -140,7 +140,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Query {
             mut n,
-            c,
+            lambda,
             alpha,
             total,
             stats,
@@ -156,7 +156,7 @@ fn main() -> anyhow::Result<()> {
                 .unwrap();
 
             let params = PtrHashParams {
-                c,
+                lambda,
                 alpha,
                 print_stats: stats,
                 slots_per_part: s,
@@ -208,7 +208,7 @@ fn main() -> anyhow::Result<()> {
                 eprintln!("\nBenchmarking {bucket_fn:?}");
                 let Command::BucketFn {
                     n,
-                    c,
+                    lambda,
                     alpha,
                     total,
                     stats,
@@ -222,7 +222,7 @@ fn main() -> anyhow::Result<()> {
                 };
 
                 let params = PtrHashParams {
-                    c,
+                    lambda,
                     alpha,
                     print_stats: stats,
                     slots_per_part: s,

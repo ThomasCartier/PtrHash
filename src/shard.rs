@@ -32,8 +32,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> impl Iterator<Item = Vec<Hx::H>> + 'a {
         eprintln!("In-memory sharding: iterate keys once per shard.");
-        (0..self.num_shards).map(move |shard| {
-            eprintln!("Shard {shard:>3}/{:3}", self.num_shards);
+        (0..self.shards).map(move |shard| {
+            eprintln!("Shard {shard:>3}/{:3}", self.shards);
             let start = std::time::Instant::now();
             let hashes = keys
                 .clone()
@@ -62,7 +62,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         eprintln!("TMP PATH: {:?}", temp_dir.path());
 
         // Create a file writer and count for each shard.
-        let writers = (0..self.num_shards)
+        let writers = (0..self.shards)
             .map(|shard| {
                 Mutex::new((
                     BufWriter::new(

@@ -20,7 +20,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         pilots: &mut [u8],
         taken: &mut [BitVec],
     ) -> bool {
-        let pilots_per_part = pilots.par_chunks_exact_mut(self.b);
+        let pilots_per_part = pilots.par_chunks_exact_mut(self.buckets);
 
         let iter = pilots_per_part.zip(taken).enumerate();
 
@@ -39,8 +39,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             if self.params.print_stats {
                 eprint!(
                     "parts done: {parts_done:>6}/{:>6} ({:>4.1}%)\r",
-                    self.num_parts,
-                    100. * parts_done as f32 / self.num_parts as f32
+                    self.parts,
+                    100. * parts_done as f32 / self.parts as f32
                 );
             }
             Some(())
@@ -63,11 +63,11 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             eprint!("\x1b[K");
             eprintln!(
                 "  displ./bkt: {:>14.3}",
-                total_evictions as f32 / (self.b * self.parts_per_shard) as f32
+                total_evictions as f32 / (self.buckets * self.parts_per_shard) as f32
             );
             eprintln!(
                 "   avg pilot: {:>14.3}",
-                sum_pilots as f32 / (self.b * self.parts_per_shard) as f32
+                sum_pilots as f32 / (self.buckets * self.parts_per_shard) as f32
             );
         }
 
@@ -90,7 +90,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
 
         let kmax = 256;
 
-        let mut slots = vec![BucketIdx::NONE; self.s];
+        let mut slots = vec![BucketIdx::NONE; self.slots];
         let bucket_len = |b: BucketIdx| (starts[b + 1] - starts[b]) as usize;
 
         let max_bucket_len = bucket_len(bucket_order[0]);
@@ -139,7 +139,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             recent[0] = new_b;
 
             'b: while let Some((_b_len, b)) = stack.pop() {
-                if evictions > self.s && evictions.is_power_of_two() {
+                if evictions > self.slots && evictions.is_power_of_two() {
                     // log = true;
                     let num_taken_slots = taken.count_ones();
                     if self.params.print_stats {
@@ -147,14 +147,14 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                             "part {part:>6} alpha {:>5.2}% bucket size {} ({}/{}, {:>5.2}%) slots filled {}/{} ({:>5.2}%) chain: {evictions:>9}",
                             100. * hashes.len()  as f32 / slots.len() as f32,
                             new_b_len,
-                            i, self.b,
-                            100. * i as f32 / self.b as f32,
+                            i, self.buckets,
+                            100. * i as f32 / self.buckets as f32,
                             num_taken_slots,
                             taken.len(),
                             100. * num_taken_slots as f32 / taken.len() as f32,
                         );
                     }
-                    if evictions >= 10 * self.s {
+                    if evictions >= 10 * self.slots {
                         eprintln!(
                             "\
 Too many evictions. Aborting!

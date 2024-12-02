@@ -16,7 +16,7 @@ fn main() {
         n,
         keys.clone(),
         PtrHashParams {
-            c: 10.,
+            lambda: 5.0,
             // ~10GB of keys per shard.
             keys_per_shard: 1 << 29,
             sharding: Sharding::Memory,

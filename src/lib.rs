@@ -90,8 +90,8 @@ pub struct PtrHashParams<BF> {
     pub remap: bool,
     /// Use `n/alpha` slots approximately.
     pub alpha: f64,
-    /// Use `c*n/lg(n)` buckets.
-    pub c: f64,
+    /// Use average bucket size lambda.
+    pub lambda: f64,
     /// Bucket function
     pub bucket_fn: BF,
     /// #slots/part will be the largest power of 2 not larger than this.
@@ -117,7 +117,7 @@ impl Default for PtrHashParams<Linear> {
         Self {
             remap: true,
             alpha: 0.98,
-            c: 9.0,
+            lambda: 5.0,
             bucket_fn: Linear,
             slots_per_part: 1 << 18,
             // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^32=32GB.
@@ -168,23 +168,23 @@ pub struct PtrHash<
     /// The number of keys.
     n: usize,
     /// The total number of parts.
-    num_parts: usize,
+    parts: usize,
     /// The number of shards.
-    num_shards: usize,
+    shards: usize,
     /// The maximal number of parts per shard.
     /// The last shard may have fewer parts.
     parts_per_shard: usize,
     /// The total number of slots.
-    s_total: usize,
+    slots_total: usize,
     /// The total number of buckets.
-    b_total: usize,
+    buckets_total: usize,
     /// The number of slots per part, always a power of 2.
-    s: usize,
+    slots: usize,
     /// Since s is a power of 2, we can compute multiplications using a shift
     /// instead.
-    s_bits: u32,
+    lg_slots: u32,
     /// The number of buckets per part.
-    b: usize,
+    buckets: usize,
 
     // Precomputed fast modulo operations.
     /// Fast %shards.
@@ -192,12 +192,12 @@ pub struct PtrHash<
     /// Fast %parts.
     rem_parts: Rp,
     /// Fast &b.
-    rem_b: Rb,
+    rem_buckets: Rb,
     /// Fast &b_total.
-    rem_b_total: Rb,
+    rem_buckets_total: Rb,
 
     /// Fast %s.
-    rem_s: Rs,
+    rem_slots: Rs,
 
     // Computed state.
     /// The global seed.
@@ -257,12 +257,12 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     /// PtrHash with random pilots, for benchmarking query speed.
     pub fn new_random(n: usize, params: PtrHashParams<BF>) -> Self {
         let mut ptr_hash = Self::init(n, params);
-        let k = (0..ptr_hash.b_total)
+        let k = (0..ptr_hash.buckets_total)
             .map(|_| random::<u8>() as Pilot)
             .collect();
         ptr_hash.pilots = MutPacked::new(k);
-        let rem_s_total = FastReduce::new(ptr_hash.s_total);
-        let mut remap_vals = (ptr_hash.n..ptr_hash.s_total)
+        let rem_s_total = FastReduce::new(ptr_hash.slots_total);
+        let mut remap_vals = (ptr_hash.n..ptr_hash.slots_total)
             .map(|_| rem_s_total.reduce(random::<u64>()) as _)
             .collect_vec();
         remap_vals.radix_sort_unstable();
@@ -275,62 +275,56 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     fn init(n: usize, mut params: PtrHashParams<BF>) -> Self {
         assert!(n > 1, "Things break if n=1.");
         assert!(n < (1 << 40), "Number of keys must be less than 2^40.");
-
-        // Target number of slots in total over all parts.
-        let s_total_target = (n as f64 / params.alpha) as usize;
-
-        // Target number of buckets in total.
-        let b_total_target = params.c * (n as f64) / (n as f64).log2();
-
         assert!(
             params.slots_per_part <= u32::MAX as _,
             "Each part must have <2^32 slots"
         );
-        // We start with the given maximum number of slots per part, since
-        // that is what should fit in L1 or L2 cache.
-        // Thus, the number of partitions is:
-        let s = 1 << params.slots_per_part.ilog2();
-        if let Sharding::None = params.sharding {
-            params.keys_per_shard = n;
-        }
-        let num_shards = n.div_ceil(params.keys_per_shard);
-        let parts_per_shard = s_total_target.div_ceil(s).div_ceil(num_shards);
-        let num_parts = num_shards * parts_per_shard;
 
-        let s_total = s * num_parts;
-        // b divisible by 3 is exploited by bucket_thirds.
-        let b = ((b_total_target / (num_parts as f64)).ceil() as usize).next_multiple_of(3);
-        let b_total = b * num_parts;
-        // TODO: Figure out if large gcd(b,s) is a problem for the original PtrHash.
+        let shards = match params.sharding {
+            Sharding::None => 1,
+            _ => n.div_ceil(params.keys_per_shard),
+        };
+        let keys_per_shard = n.div_ceil(shards);
+
+        let slots_per_part = 1 << params.slots_per_part.ilog2();
+        let keys_per_part = (params.alpha * slots_per_part as f64) as usize;
+        let parts_per_shard = keys_per_shard.div_ceil(keys_per_part);
+        let buckets_per_part = (keys_per_part as f64 / params.lambda).ceil() as usize;
+
+        let parts = shards * parts_per_shard;
+        let buckets_total = parts * buckets_per_part;
+        let slots_total = parts * slots_per_part;
 
         if params.print_stats {
             eprintln!("        keys: {n:>10}");
-            eprintln!("      shards: {num_shards:>10}");
-            eprintln!("       parts: {num_parts:>10}");
-            eprintln!("   slots/prt: {s:>10}");
-            eprintln!("   slots tot: {s_total:>10}");
-            eprintln!(" buckets/prt: {b:>10}");
-            eprintln!(" buckets tot: {b_total:>10}");
-            eprintln!("keys/ bucket: {:>13.2}", n as f64 / b_total as f64);
+            eprintln!("      shards: {shards:>10}");
+            eprintln!("       parts: {parts:>10}");
+            eprintln!("   slots/prt: {slots_per_part:>10}");
+            eprintln!("   slots tot: {slots_total:>10}");
+            eprintln!(" buckets/prt: {buckets_per_part:>10}");
+            eprintln!(" buckets tot: {buckets_total:>10}");
+            eprintln!("keys/ bucket: {:>13.2}", n as f64 / buckets_total as f64);
         }
-        params.bucket_fn.set_buckets_per_part(b as u64);
+        params
+            .bucket_fn
+            .set_buckets_per_part(buckets_per_part as u64);
 
         Self {
             params,
             n,
-            num_parts,
-            num_shards,
+            parts,
+            shards,
             parts_per_shard,
-            s_total,
-            s,
-            s_bits: s.ilog2(),
-            b_total,
-            b,
-            rem_shards: Rp::new(num_shards),
-            rem_parts: Rp::new(num_parts),
-            rem_b: Rb::new(b),
-            rem_b_total: Rb::new(b_total),
-            rem_s: Rs::new(s),
+            slots_total,
+            slots: slots_per_part,
+            lg_slots: slots_per_part.ilog2(),
+            buckets_total,
+            buckets: buckets_per_part,
+            rem_shards: Rp::new(shards),
+            rem_parts: Rp::new(parts),
+            rem_buckets: Rb::new(buckets_per_part),
+            rem_buckets_total: Rb::new(buckets_total),
+            rem_slots: Rs::new(slots_per_part),
             seed: 0,
             pilots: Default::default(),
             remap: F::default(),
@@ -359,7 +353,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             assert!(
                 tries <= MAX_TRIES,
                 "Failed to find a global seed after {MAX_TRIES} tries for {} keys.",
-                self.s
+                self.slots
             );
             if tries > 1 {
                 eprintln!("Try {tries} for global seed.");
@@ -370,13 +364,13 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
 
             // Reset output-memory.
             pilots.clear();
-            pilots.resize(self.b_total, 0);
+            pilots.resize(self.buckets_total, 0);
 
             for taken in taken.iter_mut() {
                 taken.clear();
-                taken.resize(self.s, false);
+                taken.resize(self.slots, false);
             }
-            taken.resize_with(self.num_parts, || bitvec![0; self.s]);
+            taken.resize_with(self.parts, || bitvec![0; self.slots]);
 
             // Iterate over shards.
             let shard_hashes = match self.params.sharding {
@@ -388,7 +382,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                     Either::Right(Either::Right(self.shard_keys_in_memory(keys.clone())))
                 }
             };
-            let shard_pilots = pilots.chunks_mut(self.b * self.parts_per_shard);
+            let shard_pilots = pilots.chunks_mut(self.buckets * self.parts_per_shard);
             let shard_taken = taken.chunks_mut(self.parts_per_shard);
             // eprintln!("Num shards (keys) {}", shard_keys.());
             for (shard, (hashes, pilots, taken)) in
@@ -431,24 +425,24 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     fn remap_free_slots(&mut self, taken: Vec<BitVec>) {
         assert_eq!(
             taken.iter().map(|t| t.count_zeros()).sum::<usize>(),
-            self.s_total - self.n,
+            self.slots_total - self.n,
             "Not the right number of free slots left!\n total slots {} - n {}",
-            self.s_total,
+            self.slots_total,
             self.n
         );
 
-        if !self.params.remap || self.s_total == self.n {
+        if !self.params.remap || self.slots_total == self.n {
             return;
         }
 
         // Compute the free spots.
-        let mut v = Vec::with_capacity(self.s_total - self.n);
-        let get = |t: &Vec<BitVec>, idx: usize| t[idx / self.s][idx % self.s];
+        let mut v = Vec::with_capacity(self.slots_total - self.n);
+        let get = |t: &Vec<BitVec>, idx: usize| t[idx / self.slots][idx % self.slots];
         for i in taken
             .iter()
             .enumerate()
             .flat_map(|(p, t)| {
-                let offset = p * self.s;
+                let offset = p * self.slots;
                 t.iter_zeros().map(move |i| offset + i)
             })
             .take_while(|&i| i < self.n)
@@ -490,7 +484,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 
     /// index() always returns below this bound.
     pub fn max_index(&self) -> usize {
-        self.s_total
+        self.slots_total
     }
 
     /// Get a non-minimal index of the given key.
@@ -637,7 +631,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         if BF::B_OUTPUT {
             self.params.bucket_fn.call(x) as usize
         } else {
-            self.rem_b.reduce(self.params.bucket_fn.call(x))
+            self.rem_buckets.reduce(self.params.bucket_fn.call(x))
         }
     }
 
@@ -645,7 +639,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     /// Returns the offset in the slots array for the current part and the bucket index.
     fn bucket(&self, hx: Hx::H) -> usize {
         if BF::LINEAR {
-            return self.rem_b_total.reduce(hx.high());
+            return self.rem_buckets_total.reduce(hx.high());
         }
 
         // Extract the high bits for part selection; do normal bucket
@@ -653,12 +647,12 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         // NOTE: This is somewhat slow, but doing better is hard.
         let (part, hx) = self.rem_parts.reduce_with_remainder(hx.high());
         let bucket = self.bucket_in_part(hx);
-        part * self.b + bucket
+        part * self.buckets + bucket
     }
 
     /// Slot uses the 64 low bits of the hash.
     fn slot(&self, hx: Hx::H, pilot: u64) -> usize {
-        (self.part(hx) << self.s_bits) + self.slot_in_part(hx, pilot)
+        (self.part(hx) << self.lg_slots) + self.slot_in_part(hx, pilot)
     }
 
     fn slot_in_part(&self, hx: Hx::H, pilot: Pilot) -> usize {
@@ -671,6 +665,6 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         // NOTE: A simple &(s-1) mask is not sufficient, since it only uses the low order bits.
         //       The part() and bucket() functions only use high order bits, which
         //       would leave the middle bits unused, causing hash collisions.
-        self.rem_s.reduce(hx.low() ^ hp)
+        self.rem_slots.reduce(hx.low() ^ hp)
     }
 }
