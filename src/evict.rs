@@ -3,7 +3,9 @@ use crate::{bucket_idx::BucketIdx, stats::BucketStats};
 use bitvec::{slice::BitSlice, vec::BitVec};
 use rayon::prelude::*;
 use std::{
+    cell::{Cell, LazyCell, RefCell},
     collections::BinaryHeap,
+    iter::zip,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Mutex,
@@ -11,7 +13,7 @@ use std::{
 };
 
 impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
-    pub(super) fn displace_shard(
+    pub(super) fn build_shard(
         &self,
         shard: usize,
         hashes: &[Hx::H],
@@ -23,7 +25,7 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
 
         let iter = pilots_per_part.zip(taken).enumerate();
 
-        let total_displacements = AtomicUsize::new(0);
+        let total_evictions = AtomicUsize::new(0);
         let parts_done = AtomicUsize::new(shard * self.parts_per_shard);
         let stats = Mutex::new(BucketStats::new());
 
@@ -31,9 +33,9 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
             let part = shard * self.parts_per_shard + part_in_shard;
             let hashes = &hashes
                 [part_starts[part_in_shard] as usize..part_starts[part_in_shard + 1] as usize];
-            let cnt = self.displace_part(part, hashes, pilots, taken, &stats)?;
+            let cnt = self.build_part(part, hashes, pilots, taken, &stats)?;
             let parts_done = parts_done.fetch_add(1, Ordering::Relaxed);
-            total_displacements.fetch_add(cnt, Ordering::Relaxed);
+            total_evictions.fetch_add(cnt, Ordering::Relaxed);
 
             if self.params.print_stats {
                 eprint!(
@@ -54,7 +56,7 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
             (shard + 1) * self.parts_per_shard
         );
 
-        let total_displacements: usize = total_displacements.load(Ordering::Relaxed);
+        let total_evictions: usize = total_evictions.load(Ordering::Relaxed);
         let sum_pilots = pilots.iter().map(|&k| k as Pilot).sum::<Pilot>();
 
         // Clear the last \r line.
@@ -62,7 +64,7 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
             eprint!("\x1b[K");
             eprintln!(
                 "  displ./bkt: {:>14.3}",
-                total_displacements as f32 / (self.b * self.parts_per_shard) as f32
+                total_evictions as f32 / (self.b * self.parts_per_shard) as f32
             );
             eprintln!(
                 "   avg pilot: {:>14.3}",
@@ -77,7 +79,7 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
         true
     }
 
-    fn displace_part(
+    fn build_part(
         &self,
         part: usize,
         hashes: &[Hx::H],
@@ -94,6 +96,8 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
 
         let max_bucket_len = bucket_len(bucket_order[0]);
 
+        // TODO: Use bucket queue instead?
+        // TODO: Test if only comparing by length argument is better.
         let mut stack = BinaryHeap::new();
 
         let slots_for_bucket = |b: BucketIdx, p: Pilot| unsafe {
@@ -114,9 +118,16 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
         };
 
         let mut recent = [BucketIdx::NONE; 16];
-        let mut total_displacements = 0;
+        let mut total_evictions = 0;
 
         let mut rng = fastrand::Rng::new();
+
+        thread_local! {
+        static EVICTION_COUNTS: RefCell<Vec<usize>> = RefCell::new(vec![]);
+        }
+        if self.params.print_stats {
+            EVICTION_COUNTS.with(|d| d.borrow_mut().clear());
+        }
 
         for (i, &new_b) in bucket_order.iter().enumerate() {
             let new_bucket = &hashes[starts[new_b] as usize..starts[new_b + 1] as usize];
@@ -126,7 +137,7 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
             }
             let new_b_len = new_bucket.len();
 
-            let mut displacements = 0usize;
+            let mut evictions = 0usize;
 
             stack.push((new_b_len, new_b));
             recent.fill(BucketIdx::NONE);
@@ -134,12 +145,12 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
             recent[0] = new_b;
 
             'b: while let Some((_b_len, b)) = stack.pop() {
-                if displacements > self.s && displacements.is_power_of_two() {
+                if evictions > self.s && evictions.is_power_of_two() {
                     // log = true;
                     let num_taken_slots = taken.count_ones();
                     if self.params.print_stats {
                         eprintln!(
-                            "part {part:>6} alpha {:>5.2}% bucket size {} ({}/{}, {:>5.2}%) slots filled {}/{} ({:>5.2}%) chain: {displacements:>9}",
+                            "part {part:>6} alpha {:>5.2}% bucket size {} ({}/{}, {:>5.2}%) slots filled {}/{} ({:>5.2}%) chain: {evictions:>9}",
                             100. * hashes.len()  as f32 / slots.len() as f32,
                             new_b_len,
                             i, self.b,
@@ -149,10 +160,10 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
                             100. * num_taken_slots as f32 / taken.len() as f32,
                         );
                     }
-                    if displacements >= 10 * self.s {
+                    if evictions >= 10 * self.s {
                         eprintln!(
                             "\
-Too many displacements. Aborting!
+Too many evictions. Aborting!
 Try increasing c to use more buckets.
 "
                         );
@@ -183,14 +194,14 @@ Try increasing c to use more buckets.
 
                 // 2) Search for a pilot with minimal number of collisions.
 
-                // Start at a random pilot to prevent displacement cycles.
+                // Start at a random pilot to prevent eviction cycles.
                 let p0 = rng.u8(..) as u64;
                 // (worst colliding bucket size, p)
                 let mut best = (usize::MAX, u64::MAX);
 
                 'p: for delta in 0u64..kmax {
                     // HOT: This code is slow and full of branch-misses.
-                    // But also, it's only 20% of displace() time, since the
+                    // But also, it's only 20% of build_part() time, since the
                     // hot-path above covers most.
                     let p = (p0 + delta) % kmax;
                     let hp = self.hash_pilot(p);
@@ -212,7 +223,7 @@ Try increasing c to use more buckets.
                         }
                     }
 
-                    // This check takes 2% of times even though it almost
+                    // This check takes 2% of time even though it almost
                     // always passes. Can we delay it to filling of the
                     // slots table, and backtrack if needed.
                     if !duplicate_slots(b, p) {
@@ -226,24 +237,25 @@ Try increasing c to use more buckets.
                 }
 
                 if best == (usize::MAX, u64::MAX) {
-                    for hx in bucket {
-                        eprintln!("{:x?}", hx);
+                    let slots = b_slots(0);
+                    for (hx, slot) in zip(bucket, slots) {
+                        eprintln!("{:x?} -> slot {slot}", hx);
                     }
                     eprintln!("part {part}: Indistinguishable hashes in bucket!");
                     return None;
                 }
 
                 let (_collision_score, p) = best;
-                if self.params.print_stats {
-                    eprintln!(
-                        "{displacements:>7} | pilots[{:>7}] = {:>3} len: {} stack: {} score: {:>3}",
-                        b.0,
-                        p,
-                        bucket_len(b),
-                        stack.len(),
-                        _collision_score
-                    );
-                }
+                // if self.params.print_stats {
+                //     eprintln!(
+                //         "{evictions:>7} | pilots[{:>7}] = {:>3} len: {} stack: {} score: {:>3}",
+                //         b.0,
+                //         p,
+                //         bucket_len(b),
+                //         stack.len(),
+                //         _collision_score
+                //     );
+                // }
                 pilots[b] = p as u8;
                 let hp = self.hash_pilot(p);
 
@@ -254,15 +266,15 @@ Try increasing c to use more buckets.
                     if b2.is_some() {
                         assert!(b2 != b);
                         // DROP BUCKET b
-                        if self.params.print_stats {
-                            eprintln!(
-                                "{displacements:>7} | Push {:>7} len: {}",
-                                b2.0,
-                                bucket_len(b2)
-                            );
-                        }
+                        // if self.params.print_stats {
+                        //     eprintln!(
+                        //         "{evictions:>7} | Push {:>7} len: {}",
+                        //         b2.0,
+                        //         bucket_len(b2)
+                        //     );
+                        // }
                         stack.push((bucket_len(b2), b2));
-                        displacements += 1;
+                        evictions += 1;
                         for p2 in slots_for_bucket(b2, pilots[b2] as Pilot) {
                             unsafe {
                                 *slots.get_unchecked_mut(p2) = BucketIdx::NONE;
@@ -280,17 +292,29 @@ Try increasing c to use more buckets.
                 recent_idx %= recent.len();
                 recent[recent_idx] = b;
             }
-            total_displacements += displacements;
+            total_evictions += evictions;
+            if self.params.print_stats {
+                EVICTION_COUNTS.with(|d| d.borrow_mut().push(evictions));
+            }
         }
 
         if self.params.print_stats {
             let mut stats = stats.lock().unwrap();
-            for (i, &b) in bucket_order.iter().enumerate() {
-                stats.add(i, bucket_order.len(), bucket_len(b), pilots[b] as Pilot);
-            }
+            EVICTION_COUNTS.with(|d| {
+                let d = d.borrow();
+                for (i, &b) in bucket_order.iter().enumerate() {
+                    stats.add(
+                        i,
+                        bucket_order.len(),
+                        bucket_len(b),
+                        pilots[b] as Pilot,
+                        d[i],
+                    );
+                }
+            });
         }
 
-        Some(total_displacements)
+        Some(total_evictions)
     }
 
     fn find_pilot(
@@ -339,7 +363,7 @@ Try increasing c to use more buckets.
             let check = |hx| unsafe { *taken.get_unchecked(self.slot_in_part_hp(hx, hp)) };
 
             // Process chunks of 4 bucket elements at a time.
-            // This reduces branch-misses (of all of displace) 3-fold, giving 20% speedup.
+            // This reduces branch-misses (of all of build_part) 3-fold, giving 20% speedup.
             for i in (0..r).step_by(4) {
                 // Check all 4 elements of the chunk without early break.
                 // NOTE: It's hard to SIMD vectorize the `slot` computation

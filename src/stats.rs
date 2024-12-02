@@ -6,13 +6,15 @@ struct Row {
     elements: usize,
     pilot_sum: Pilot,
     pilot_max: Pilot,
+    evictions: usize,
 }
 
 impl Row {
-    fn add(&mut self, bucket_len: usize, pilot: Pilot) {
+    fn add(&mut self, bucket_len: usize, pilot: Pilot, evictions: usize) {
         self.buckets += 1;
         self.elements += bucket_len;
         self.pilot_sum += pilot;
+        self.evictions += evictions;
         self.pilot_max = self.pilot_max.max(pilot);
     }
 }
@@ -30,13 +32,20 @@ impl BucketStats {
         }
     }
 
-    pub fn add(&mut self, bucket_id: usize, buckets_total: usize, bucket_len: usize, pilot: Pilot) {
+    pub fn add(
+        &mut self,
+        bucket_id: usize,
+        buckets_total: usize,
+        bucket_len: usize,
+        pilot: Pilot,
+        evictions: usize,
+    ) {
         let pct = bucket_id * 100 / buckets_total;
-        self.by_pct[pct].add(bucket_len, pilot);
+        self.by_pct[pct].add(bucket_len, pilot, evictions);
         if self.by_bucket_len.len() <= bucket_len {
             self.by_bucket_len.resize(bucket_len + 1, Row::default());
         }
-        self.by_bucket_len[bucket_len].add(bucket_len, pilot);
+        self.by_bucket_len[bucket_len].add(bucket_len, pilot, evictions);
     }
 
     pub fn print(&self) {
@@ -52,7 +61,7 @@ impl BucketStats {
         let n = rows.iter().map(|r| r.elements).sum::<usize>();
 
         eprintln!(
-            "{:>3}  {:>11} {:>7} {:>6} {:>6} {:>6} {:>10} {:>10}",
+            "{:>4}  {:>11} {:>7} {:>6} {:>6} {:>6} {:>10} {:>10}",
             "sz", "cnt", "bucket%", "cuml%", "elem%", "cuml%", "avg p", "max p"
         );
         let mut bucket_cuml = 0;
@@ -64,7 +73,7 @@ impl BucketStats {
             bucket_cuml += row.buckets;
             elem_cuml += row.elements;
             eprintln!(
-                "{:>3}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10}",
+                "{:>4}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10}",
                 row.elements / row.buckets,
                 row.buckets,
                 row.buckets as f32 / b_total as f32 * 100.,
@@ -83,7 +92,7 @@ impl BucketStats {
         let sum_pilots = rows.iter().map(|r| r.pilot_sum).sum::<Pilot>();
         let max_pilot = rows.iter().map(|r| r.pilot_max).max().unwrap();
         eprintln!(
-            "{:>3}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10}",
+            "{:>4}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10}",
             "",
             b_total,
             100.,

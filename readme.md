@@ -1,4 +1,4 @@
-# PTRHash
+# PtrHash
 
 PTRHash is a fast and space efficient *minimal perfect hash function* that maps
 a list of `n` distinct keys into `[n]`.  It is an adaptation of [PTHash](https://github.com/jermp/pthash), and
@@ -76,9 +76,9 @@ PTRHash extends it in a few ways:
 -   **8-bit pilots:** Instead of allowing pilots to take any integer value, we
     restrict them to `[0, 256)` and store them as `Vec<u8>` directly, instead of
     requiring a compact or dictionary encoding.
--   **Displacing:** To get all pilots to be small, we use *displacing*, similar
+-   **Evicting:** To get all pilots to be small, we use *evictions*, similar
     to *cuckoo hashing*: Whenever we cannot find a collision-free pilot for a
-    bucket, we find the pilot with the fewest collisions and *displace* all
+    bucket, we find the pilot with the fewest collisions and *evict* all
     colliding buckets, which are pushed on a queue after which they will search
     for a new pilot.
 -   **Partitioning:** To speed up construction, we partition all keys/hashes

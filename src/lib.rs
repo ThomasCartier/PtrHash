@@ -44,7 +44,7 @@ pub mod pack;
 pub mod util;
 
 mod bucket_idx;
-mod displace;
+mod evict;
 mod reduce;
 mod shard;
 mod sort_buckets;
@@ -440,10 +440,10 @@ impl<Key: KeyT, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, F, Hx, Vec<u8>> {
                 let start = log_duration("sort buckets", start);
 
                 // Compute pilots.
-                if !self.displace_shard(shard, &hashes, &part_starts, pilots, taken) {
+                if !self.build_shard(shard, &hashes, &part_starts, pilots, taken) {
                     continue 's;
                 }
-                log_duration("displace", start);
+                log_duration("find pilots", start);
             }
 
             // Found a suitable seed.
