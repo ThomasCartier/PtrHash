@@ -119,7 +119,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         assert_eq!(end, hashes.len());
 
         let max_bucket_size = bucket_len_cnt.len() - 1;
-        {
+        // This assert is disabled, because it only holds when using uniform buckets.
+        if false {
             let expected_bucket_size = self.s as f32 / self.b as f32;
             assert!(max_bucket_size <= (20. * expected_bucket_size) as usize, "Part {part}: Bucket size {max_bucket_size} is too much larger than the expected size of {expected_bucket_size}." );
         }

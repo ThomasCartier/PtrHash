@@ -28,6 +28,10 @@ pub fn prefetch_index<T>(s: &[T], index: usize) {
     }
 }
 
+pub fn mul_high(a: u64, b: u64) -> u64 {
+    ((a as u128 * b as u128) >> 64) as u64
+}
+
 thread_local! {
     /// TODO: Use trace! instead.
     static LOG: std::cell::Cell<bool> = std::cell::Cell::new(true);

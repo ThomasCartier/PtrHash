@@ -56,6 +56,7 @@ mod test;
 
 use bitvec::{bitvec, vec::BitVec};
 use bucket_fn::BucketFn;
+use bucket_fn::Linear;
 use cacheline_ef::CachelineEfVec;
 use either::Either;
 use itertools::izip;
@@ -84,17 +85,15 @@ pub enum Sharding {
 /// Since these are not used in inner loops they are simple variables instead of template arguments.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-pub struct PtrHashParams {
+pub struct PtrHashParams<BF> {
     /// Set to false to disable remapping to a minimal PHF.
     pub remap: bool,
     /// Use `n/alpha` slots approximately.
     pub alpha: f64,
     /// Use `c*n/lg(n)` buckets.
     pub c: f64,
-    /// Map `beta` of elements...
-    pub beta: f64,
-    /// ... to `gamma` of buckets.
-    pub gamma: f64,
+    /// Bucket function
+    pub bucket_fn: BF,
     /// #slots/part will be the largest power of 2 not larger than this.
     /// Default is 2^18.
     pub slots_per_part: usize,
@@ -113,15 +112,13 @@ pub struct PtrHashParams {
 /// - `alpha=0.98`
 /// - `c=9.0`
 /// - `slots_per_part=2^18=262144`
-impl Default for PtrHashParams {
+impl Default for PtrHashParams<Linear> {
     fn default() -> Self {
         Self {
             remap: true,
             alpha: 0.98,
             c: 9.0,
-            // TODO: Understand why exactly this choice of parameters.
-            beta: 0.6,
-            gamma: 0.3,
+            bucket_fn: Linear,
             slots_per_part: 1 << 18,
             // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^32=32GB.
             keys_per_shard: 1 << 32,
@@ -151,11 +148,6 @@ type Rs = MulReduce;
 type Pilot = u64;
 type PilotHash = u64;
 
-#[cfg(feature = "split_buckets")]
-const SPLIT_BUCKETS: bool = true;
-#[cfg(not(feature = "split_buckets"))]
-const SPLIT_BUCKETS: bool = false;
-
 /// PtrHash datastructure.
 /// The recommended way to use PtrHash with default types.
 ///
@@ -171,7 +163,7 @@ pub struct PtrHash<
     Hx: Hasher<Key> = hash::FxHash,
     V: AsRef<[u8]> = Vec<u8>,
 > {
-    params: PtrHashParams,
+    params: PtrHashParams<BF>,
 
     /// The number of keys.
     n: usize,
@@ -194,11 +186,6 @@ pub struct PtrHash<
     /// The number of buckets per part.
     b: usize,
 
-    /// Additional constants.
-    p1: u64,
-    p2: usize,
-    c3: isize,
-
     // Precomputed fast modulo operations.
     /// Fast %shards.
     rem_shards: Rp,
@@ -208,10 +195,6 @@ pub struct PtrHash<
     rem_b: Rb,
     /// Fast &b_total.
     rem_b_total: Rb,
-    /// Fast %(p2/p1 * B)
-    rem_c1: Rb,
-    /// Fast %((1-p1)/(1-p2) * B)
-    rem_c2: Rb,
 
     /// Fast %s.
     rem_s: Rs,
@@ -225,7 +208,6 @@ pub struct PtrHash<
     remap: F,
     _key: PhantomData<Key>,
     _hx: PhantomData<Hx>,
-    _bf: PhantomData<BF>,
 }
 
 /// Construction methods.
@@ -251,7 +233,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     /// ```
     ///
     /// NOTE: Use `<PtrHash>::new()` or `DefaultPtrHash::new()` instead of simply `PtrHash::new()`.
-    pub fn new(keys: &[Key], params: PtrHashParams) -> Self {
+    pub fn new(keys: &[Key], params: PtrHashParams<BF>) -> Self {
         let mut ptr_hash = Self::init(keys.len(), params);
         ptr_hash.compute_pilots(keys.par_iter());
         ptr_hash
@@ -265,7 +247,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     pub fn new_from_par_iter<'a>(
         n: usize,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
-        params: PtrHashParams,
+        params: PtrHashParams<BF>,
     ) -> Self {
         let mut ptr_hash = Self::init(n, params);
         ptr_hash.compute_pilots(keys);
@@ -273,7 +255,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     }
 
     /// PtrHash with random pilots, for benchmarking query speed.
-    pub fn new_random(n: usize, params: PtrHashParams) -> Self {
+    pub fn new_random(n: usize, params: PtrHashParams<BF>) -> Self {
         let mut ptr_hash = Self::init(n, params);
         let k = (0..ptr_hash.b_total)
             .map(|_| random::<u8>() as Pilot)
@@ -290,7 +272,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     }
 
     /// Only initialize the parameters; do not compute the pilots yet.
-    fn init(n: usize, mut params: PtrHashParams) -> Self {
+    fn init(n: usize, mut params: PtrHashParams<BF>) -> Self {
         assert!(n > 1, "Things break if n=1.");
         assert!(n < (1 << 40), "Number of keys must be less than 2^40.");
 
@@ -321,10 +303,6 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
         let b_total = b * num_parts;
         // TODO: Figure out if large gcd(b,s) is a problem for the original PtrHash.
 
-        // Map beta% of hashes to gamma% of buckets.
-        let beta = params.beta;
-        let gamma = params.gamma;
-
         if params.print_stats {
             eprintln!("        keys: {n:>10}");
             eprintln!("      shards: {num_shards:>10}");
@@ -333,25 +311,10 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             eprintln!("   slots tot: {s_total:>10}");
             eprintln!(" buckets/prt: {b:>10}");
             eprintln!(" buckets tot: {b_total:>10}");
-            eprintln!(
-                "keys/large b: {:>13.2}",
-                beta / gamma * n as f64 / b_total as f64
-            );
-            eprintln!(
-                "keys/small b: {:>13.2}",
-                (1. - beta) / (1. - gamma) * n as f64 / b_total as f64
-            );
             eprintln!("keys/ bucket: {:>13.2}", n as f64 / b_total as f64);
         }
+        params.bucket_fn.set_buckets_per_part(b as u64);
 
-        let p1 = (beta * u64::MAX as f64) as u64;
-        let p2 = (gamma * b as f64) as usize;
-        // (b-2) to avoid rounding issues.
-        let c1 = (gamma / beta * b.saturating_sub(2) as f64).floor() as usize;
-        // (b-2) to avoid rounding issues.
-        let c2 = (1. - gamma) / (1. - beta) * b.saturating_sub(2) as f64;
-        // +1 to avoid bucket<p2 due to rounding.
-        let c3 = p2 as isize - (beta * c2) as isize + 1;
         Self {
             params,
             n,
@@ -363,22 +326,16 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             s_bits: s.ilog2(),
             b_total,
             b,
-            p1,
-            p2,
-            c3,
             rem_shards: Rp::new(num_shards),
             rem_parts: Rp::new(num_parts),
             rem_b: Rb::new(b),
             rem_b_total: Rb::new(b_total),
-            rem_c1: Rb::new(c1),
-            rem_c2: Rb::new(c2 as usize),
             rem_s: Rs::new(s),
             seed: 0,
             pilots: Default::default(),
             remap: F::default(),
             _key: PhantomData,
             _hx: PhantomData,
-            _bf: PhantomData,
         }
     }
 
@@ -607,6 +564,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
             let pilot = self.pilots.as_ref().index(cur_bucket);
             // NOTE: Caching `part` slows things down, so it's recomputed as part of `self.slot`.
+            // TODO: Verify
             let slot = self.slot(cur_hash, pilot);
             if MINIMAL && slot >= self.n {
                 self.remap.index(slot - self.n) as usize
@@ -675,25 +633,18 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     /// Hashes >=self.p1 are mapped to small [self.p2, self.b).
     ///
     /// (Unless SPLIT_BUCKETS is false, in which case all hashes are mapped to [0, self.b).)
-    fn bucket_in_part(&self, hx_remainder: u64) -> usize {
-        if !SPLIT_BUCKETS {
-            return self.rem_b.reduce(hx_remainder);
+    fn bucket_in_part(&self, x: u64) -> usize {
+        if BF::B_OUTPUT {
+            self.params.bucket_fn.call(x) as usize
+        } else {
+            self.rem_b.reduce(self.params.bucket_fn.call(x))
         }
-
-        // NOTE: There is a lot of MOV/CMOV going on here.
-        let is_large = hx_remainder >= self.p1;
-        let rem = if is_large { self.rem_c2 } else { self.rem_c1 };
-        let b = (is_large as isize * self.c3 + rem.reduce(hx_remainder) as isize) as usize;
-        debug_assert!(!is_large || self.p2 <= b, "p2 {} <= b {}", self.p2, b);
-        debug_assert!(!is_large || b < self.b, "b {} < p2 {}", b, self.b);
-        debug_assert!(is_large || b < self.p2, "b {} < p2 {}", b, self.p2);
-        b
     }
 
     /// See bucket.rs for additional implementations.
     /// Returns the offset in the slots array for the current part and the bucket index.
     fn bucket(&self, hx: Hx::H) -> usize {
-        if !SPLIT_BUCKETS {
+        if BF::LINEAR {
             return self.rem_b_total.reduce(hx.high());
         }
 

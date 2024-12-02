@@ -76,6 +76,27 @@ enum Command {
         #[arg(short, long, default_value_t = 0)]
         threads: usize,
     },
+
+    BucketFn {
+        #[arg(short)]
+        n: usize,
+        #[arg(short, default_value_t = DEFAULT_C)]
+        c: f64,
+        #[arg(short, default_value_t = DEFAULT_ALPHA)]
+        alpha: f64,
+        #[arg(short, default_value_t = DEFAULT_SLOTS_PER_PART)]
+        s: usize,
+        #[arg(short, default_value_t = DEFAULT_KEYS_PER_SHARD)]
+        keys_per_shard: usize,
+        #[arg(long, value_enum, default_value_t = DEFAULT_SHARDING)]
+        sharding: Sharding,
+        #[arg(long, default_value_t = 300000000)]
+        total: usize,
+        #[arg(long)]
+        stats: bool,
+        #[arg(short, long, default_value_t = 0)]
+        threads: usize,
+    },
 }
 
 type PH<Key, BF> = PtrHash<Key, BF, CachelineEfVec, hash::FxHash, Vec<u8>>;
@@ -175,17 +196,70 @@ fn main() -> anyhow::Result<()> {
                 // bench_hashers(total, &params, &keys);
             }
         }
+        params @ Command::BucketFn { threads, n, .. } => {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build_global()
+                .unwrap();
+
+            let keys = ptr_hash::util::generate_keys(n);
+
+            fn test(params: &Command, keys: &Vec<u64>, bucket_fn: impl BucketFn) {
+                eprintln!("\nBenchmarking {bucket_fn:?}");
+                let Command::BucketFn {
+                    n,
+                    c,
+                    alpha,
+                    total,
+                    stats,
+                    s,
+                    keys_per_shard,
+                    sharding,
+                    threads,
+                } = *params
+                else {
+                    unreachable!()
+                };
+
+                let params = PtrHashParams {
+                    c,
+                    alpha,
+                    print_stats: stats,
+                    slots_per_part: s,
+                    keys_per_shard,
+                    sharding,
+                    bucket_fn,
+                    remap: true,
+                };
+
+                let pt = PtrHash::<_, _>::new(keys, params);
+                benchmark_queries::<32, _, _, _, _, _>(total, &keys, &pt);
+            }
+
+            test(&params, &keys, bucket_fn::CubicEps);
+            // test(&params, &keys, bucket_fn::Cubic);
+            test(&params, &keys, bucket_fn::SquareEps);
+            test(&params, &keys, bucket_fn::Square);
+            // test(&params, &keys, bucket_fn::Skewed::new(0.6, 0.3));
+            // test(&params, &keys, bucket_fn::Linear);
+            // test(&params, &keys, bucket_fn::Perfect { eps: 0. });
+            // test(&params, &keys, bucket_fn::Perfect { eps: 0.01 });
+        }
     }
 
     Ok(())
 }
 
-fn bench_hashers<Key: KeyT>(total: usize, params: &PtrHashParams, keys: &[Key]) {
+fn bench_hashers<Key: KeyT, BF: BucketFn>(total: usize, params: &PtrHashParams<BF>, keys: &[Key]) {
     let n = keys.len();
     let loops = total.div_ceil(n);
-    fn test<H: Hasher<Key>, Key: KeyT>(loops: usize, keys: &[Key], params: &PtrHashParams) {
-        type PH<Key, H> = PtrHash<Key, Linear, CachelineEfVec, H, Vec<u8>>;
-        let pt = PH::<Key, H>::new_random(keys.len(), *params);
+    fn test<H: Hasher<Key>, Key: KeyT, BF: BucketFn>(
+        loops: usize,
+        keys: &[Key],
+        params: &PtrHashParams<BF>,
+    ) {
+        type PH<Key, H, BF> = PtrHash<Key, BF, CachelineEfVec, H, Vec<u8>>;
+        let pt = PH::<Key, H, BF>::new_random(keys.len(), *params);
 
         let query = bench_index(loops, keys, |key| pt.index(key));
         eprintln!("  sequential: {query:>4.1}");
@@ -196,34 +270,34 @@ fn bench_hashers<Key: KeyT>(total: usize, params: &PtrHashParams, keys: &[Key]) 
     }
 
     eprintln!("fxhash");
-    test::<hash::FxHash, _>(loops, keys, params);
+    test::<hash::FxHash, _, _>(loops, keys, params);
     eprintln!("murmur2");
-    test::<hash::Murmur2_64, _>(loops, keys, params);
+    test::<hash::Murmur2_64, _, _>(loops, keys, params);
     eprintln!("murmur3");
-    test::<hash::FastMurmur3_128, _>(loops, keys, params);
+    test::<hash::FastMurmur3_128, _, _>(loops, keys, params);
 
     eprintln!("highway64");
-    test::<hash::Highway64, _>(loops, keys, params);
+    test::<hash::Highway64, _, _>(loops, keys, params);
     eprintln!("highway128");
-    test::<hash::Highway128, _>(loops, keys, params);
+    test::<hash::Highway128, _, _>(loops, keys, params);
     eprintln!("city64");
-    test::<hash::City64, _>(loops, keys, params);
+    test::<hash::City64, _, _>(loops, keys, params);
     eprintln!("city128");
-    test::<hash::City128, _>(loops, keys, params);
+    test::<hash::City128, _, _>(loops, keys, params);
     eprintln!("wy64");
-    test::<hash::Wy64, _>(loops, keys, params);
+    test::<hash::Wy64, _, _>(loops, keys, params);
     eprintln!("xx64");
-    test::<hash::Xx64, _>(loops, keys, params);
+    test::<hash::Xx64, _, _>(loops, keys, params);
     eprintln!("xx128");
-    test::<hash::Xx128, _>(loops, keys, params);
+    test::<hash::Xx128, _, _>(loops, keys, params);
     eprintln!("metro64");
-    test::<hash::Metro64, _>(loops, keys, params);
+    test::<hash::Metro64, _, _>(loops, keys, params);
     eprintln!("metro128");
-    test::<hash::Metro128, _>(loops, keys, params);
+    test::<hash::Metro128, _, _>(loops, keys, params);
     eprintln!("spooky64");
-    test::<hash::Spooky64, _>(loops, keys, params);
+    test::<hash::Spooky64, _, _>(loops, keys, params);
     eprintln!("spooky128");
-    test::<hash::Spooky128, _>(loops, keys, params);
+    test::<hash::Spooky128, _, _>(loops, keys, params);
 }
 
 fn benchmark_queries<

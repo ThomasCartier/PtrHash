@@ -1,4 +1,4 @@
-use crate::hash::MulHash;
+use crate::{hash::MulHash, util::mul_high};
 
 pub trait Reduce: Copy + Sync + std::fmt::Debug {
     /// Reduce into the range [0, d).
@@ -18,14 +18,14 @@ pub trait Reduce: Copy + Sync + std::fmt::Debug {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct FastReduce {
-    d: usize,
+    d: u64,
 }
 impl Reduce for FastReduce {
     fn new(d: usize) -> Self {
-        Self { d }
+        Self { d: d as u64 }
     }
     fn reduce(self, h: u64) -> usize {
-        ((self.d as u128 * h as u128) >> 64) as usize
+        mul_high(self.d, h) as usize
     }
     fn reduce_with_remainder(self, h: u64) -> (usize, u64) {
         let r = self.d as u128 * h as u128;
@@ -39,7 +39,7 @@ impl Reduce for FastReduce {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct MulReduce {
-    mask: usize,
+    mask: u64,
 }
 impl MulReduce {
     pub const C: u64 = MulHash::C;
@@ -47,9 +47,11 @@ impl MulReduce {
 impl Reduce for MulReduce {
     fn new(d: usize) -> Self {
         assert!(d.is_power_of_two());
-        Self { mask: d - 1 }
+        Self {
+            mask: (d - 1) as u64,
+        }
     }
     fn reduce(self, h: u64) -> usize {
-        ((Self::C as u128 * h as u128) >> 64) as usize & self.mask
+        (mul_high(Self::C, h) & self.mask) as usize
     }
 }
