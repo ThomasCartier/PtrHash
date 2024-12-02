@@ -24,6 +24,10 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>> PtrHash<Key, F, Hx> {
 
         let start = Instant::now();
         // 2. Radix sort hashes.
+        // HOT: This takes half the time for 128bit hashes.
+        // TODO: Just append each hash to its part directly, where each part has
+        //       space for exactly its number of slots.
+        //
         // TODO: Write robinhood sort that inserts in the right place directly.
         // A) Sort L1 sized ranges.
         // B) Splat the front of each range to the next part of the target interval.

@@ -121,7 +121,7 @@ impl Default for PtrHashParams {
             gamma: 0.3,
             slots_per_part: 1 << 18,
             // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^32=32GB.
-            keys_per_shard: 1 << 33,
+            keys_per_shard: 1 << 32,
             sharding: Sharding::None,
             print_stats: false,
         }
@@ -293,7 +293,7 @@ impl<Key: KeyT, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, F, Hx, Vec<u8>> {
         let s_total_target = (n as f64 / params.alpha) as usize;
 
         // Target number of buckets in total.
-        let b_total_target = params.c * (s_total_target as f64) / (s_total_target as f64).log2();
+        let b_total_target = params.c * (n as f64) / (n as f64).log2();
 
         assert!(
             params.slots_per_part <= u32::MAX as _,
@@ -530,8 +530,6 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>> PtrHash<Key, F, Hx, 
 
     /// Get a non-minimal index of the given key.
     /// Use `index_minimal` to get a key in `[0, n)`.
-    ///
-    /// `index.rs` has additional streaming/SIMD implementations.
     #[inline]
     pub fn index(&self, key: &Key) -> usize {
         let hx = self.hash_key(key);
@@ -568,38 +566,40 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>> PtrHash<Key, F, Hx, 
     /// Takes an iterator over keys and returns an iterator over the indices of the keys.
     ///
     /// Uses a buffer of size K for prefetching ahead.
-    //
-    // TODO: A chunked version that processes K keys at a time.
-    // TODO: SIMD to determine buckets/positions in parallel.
+    // NOTE: It would be cool to use SIMD to determine buckets/positions in
+    // parallel, but this is complicated, since SIMD doesn't support the
+    // 64x64->128 multiplications needed in bucket/slot computations.
     #[inline]
-    pub fn index_stream<'a, const K: usize, const MINIMAL: bool>(
+    pub fn index_stream<'a, const B: usize, const MINIMAL: bool>(
         &'a self,
-        xs: impl IntoIterator<Item = &'a Key> + 'a,
+        keys: impl IntoIterator<Item = &'a Key> + 'a,
     ) -> impl Iterator<Item = usize> + 'a {
-        // Append K values at the end of the iterator to make sure we wrap sufficiently.
-        let mut hxs = xs
+        // Append B values at the end of the iterator to make sure we wrap sufficiently.
+        let mut hashes = keys
             .into_iter()
             .map(|x| self.hash_key(x))
-            .chain(std::iter::repeat(Hx::H::default()).take(K));
+            .chain([Default::default(); B]);
 
-        let mut next_hx: [Hx::H; K] = [Hx::H::default(); K];
-        let mut next_i: [usize; K] = [0; K];
-        // Initialize and prefetch first values.
-        for idx in 0..K {
-            next_hx[idx] = hxs.next().unwrap();
-            next_i[idx] = self.bucket(next_hx[idx]);
-            crate::util::prefetch_index(self.pilots.as_ref(), next_i[idx]);
+        // Ring buffers to cache the hash and bucket of upcoming queries.
+        let mut next_hashes: [Hx::H; B] = [Hx::H::default(); B];
+        let mut next_buckets: [usize; B] = [0; B];
+
+        // Initialize and prefetch first B values.
+        for idx in 0..B {
+            next_hashes[idx] = hashes.next().unwrap();
+            next_buckets[idx] = self.bucket(next_hashes[idx]);
+            crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
         }
-        hxs.enumerate().map(move |(idx, hx)| {
-            let idx = idx % K;
-            let cur_hx = next_hx[idx];
-            let cur_i = next_i[idx];
-            next_hx[idx] = hx;
-            next_i[idx] = self.bucket(next_hx[idx]);
-            crate::util::prefetch_index(self.pilots.as_ref(), next_i[idx]);
-            let pilot = self.pilots.as_ref().index(cur_i);
+        hashes.enumerate().map(move |(idx, next_hash)| {
+            let idx = idx % B;
+            let cur_hash = next_hashes[idx];
+            let cur_bucket = next_buckets[idx];
+            next_hashes[idx] = next_hash;
+            next_buckets[idx] = self.bucket(next_hashes[idx]);
+            crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
+            let pilot = self.pilots.as_ref().index(cur_bucket);
             // NOTE: Caching `part` slows things down, so it's recomputed as part of `self.slot`.
-            let slot = self.slot(cur_hx, pilot);
+            let slot = self.slot(cur_hash, pilot);
             if MINIMAL && slot >= self.n {
                 self.remap.index(slot - self.n) as usize
             } else {
@@ -670,6 +670,10 @@ impl<Key: KeyT, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>> PtrHash<Key, F, Hx, 
 
     /// Slot uses the 64 low bits of the hash.
     fn slot_in_part_hp(&self, hx: Hx::H, hp: PilotHash) -> usize {
+        // NOTE: Fastmod s is slower since it needs two multiplications instead of 1.
+        // NOTE: A simple &(s-1) mask is not sufficient, since it only uses the low order bits.
+        //       The part() and bucket() functions only use high order bits, which
+        //       would leave the middle bits unused, causing hash collisions.
         self.rem_s.reduce(hx.low() ^ hp)
     }
 }

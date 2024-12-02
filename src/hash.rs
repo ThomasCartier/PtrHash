@@ -144,7 +144,7 @@ impl<Key> Hasher<Key> for FastMurmur3_128 {
     }
 }
 
-// C. Furhther high quality hash functions.
+// C. Further high quality hash functions.
 impl<Key> Hasher<Key> for Murmur3_128 {
     type H = u128;
     fn hash(x: &Key, seed: u64) -> u128 {
