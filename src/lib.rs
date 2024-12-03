@@ -117,7 +117,7 @@ impl Default for PtrHashParams<Linear> {
         Self {
             remap: true,
             alpha: 0.98,
-            lambda: 5.0,
+            lambda: 3.5,
             bucket_fn: Linear,
             slots_per_part: 1 << 18,
             // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^32=32GB.

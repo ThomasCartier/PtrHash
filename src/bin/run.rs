@@ -24,7 +24,7 @@ struct Args {
     command: Command,
 }
 
-const DEFAULT_LAMBDA: f64 = 5.0;
+const DEFAULT_LAMBDA: f64 = 3.5;
 const DEFAULT_ALPHA: f64 = 0.98;
 const DEFAULT_SLOTS_PER_PART: usize = 1 << 18;
 const DEFAULT_KEYS_PER_SHARD: usize = 1 << 33;
