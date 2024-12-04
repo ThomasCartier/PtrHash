@@ -95,8 +95,10 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
 
         let max_bucket_len = bucket_len(bucket_order[0]);
 
+        // First process larger buckets.
         // TODO: Use bucket queue instead?
-        // TODO: Test if only comparing by length argument is better.
+        // NOTE: I tried 'rattle-kicking' where we prefer evicting buckets with a small pilot,
+        //       but in practice this ends up slower, even though it saves ~15% of evictions.
         let mut stack = BinaryHeap::new();
 
         let slots_for_bucket = |b: BucketIdx, p: Pilot| unsafe {
@@ -158,7 +160,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                         eprintln!(
                             "\
 Too many evictions. Aborting!
-Try increasing c to use more buckets.
+Try decreasing lambda to use fewer elements per buckets.
 "
                         );
                         return None;
@@ -232,10 +234,17 @@ Try increasing c to use more buckets.
 
                 if best == (usize::MAX, u64::MAX) {
                     let slots = b_slots(0);
+                    let len = bucket.len();
+                    let num_slots = self.slots;
+                    eprintln!(
+                        "part {part}: bucket of size {len} with {num_slots} slots: Indistinguishable hashes in bucket!"
+                    );
                     for (hx, slot) in zip(bucket, slots) {
                         eprintln!("{:x?} -> slot {slot}", hx);
                     }
-                    eprintln!("part {part}: Indistinguishable hashes in bucket!");
+                    eprintln!(
+                        "part {part}: bucket of size {len} with {num_slots} slots: Indistinguishable hashes in bucket!"
+                    );
                     return None;
                 }
 
