@@ -74,7 +74,7 @@ impl BucketFn for Skewed {
         let as_u64 = |x: f64| (x * u64::MAX as f64) as u64;
         self.slope1 = mul_high(as_u64(gamma / beta), self.b);
         self.slope2 = mul_high(as_u64((1. - gamma) / (1. - beta) / 8.), self.b << 3);
-        self.neg_offset = mul_high(as_u64((beta - gamma) / (1. - beta)) >> 3, self.b << 3);
+        self.neg_offset = mul_high(as_u64((beta - gamma) / (1. - beta) / 8.), self.b << 3);
         self.beta = as_u64(beta);
         eprintln!("{self:?}");
     }
@@ -140,7 +140,7 @@ pub struct CubicEps;
 impl BucketFn for CubicEps {
     fn call(&self, x: u64) -> u64 {
         // x * x * (1 + x)/2
-        mul_high(mul_high(x, x), (x >> 1) | (1 << 63)) / 128 * 127 + x / 128
+        mul_high(mul_high(x, x), (x >> 1) | (1 << 63)) / 256 * 255 + x / 256
     }
 }
 
