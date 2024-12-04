@@ -4,6 +4,7 @@ use crate::Pilot;
 struct Row {
     buckets: usize,
     elements: usize,
+    elements_max: usize,
     pilot_sum: Pilot,
     pilot_max: Pilot,
     evictions: usize,
@@ -14,6 +15,7 @@ impl Row {
     fn add(&mut self, bucket_len: usize, pilot: Pilot, evictions: usize) {
         self.buckets += 1;
         self.elements += bucket_len;
+        self.elements_max = self.elements_max.max(bucket_len);
         self.pilot_sum += pilot;
         self.pilot_max = self.pilot_max.max(pilot);
         self.evictions += evictions;
@@ -85,7 +87,7 @@ impl BucketStats {
             elem_cuml += row.elements;
             eprintln!(
                 "{:>4}: {:>11} {:>7.2} {:>6.2} {:>6.2} {:>6.2} {:>10.1} {:>10} {:>10.5} {:>10}",
-                (row.elements + row.buckets - 1) / row.buckets,
+                row.elements_max,
                 row.buckets,
                 row.buckets as f32 / b_total as f32 * 100.,
                 bucket_cuml as f32 / b_total as f32 * 100.,
