@@ -84,7 +84,7 @@ impl MutPacked for CachelineEfVec<Vec<CachelineEf>> {
 
 impl<T: AsRef<[CachelineEf]> + Sync> Packed for CachelineEfVec<T> {
     fn index(&self, index: usize) -> u64 {
-        self.index(index)
+        unsafe { self.index_unchecked(index) }
     }
     fn prefetch(&self, index: usize) {
         self.prefetch(index)
