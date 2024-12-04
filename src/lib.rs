@@ -549,23 +549,26 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             next_buckets[idx] = self.bucket(next_hashes[idx]);
             crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
         }
-        hashes.enumerate().map(move |(idx, next_hash)| {
-            let idx = idx % B;
-            let cur_hash = next_hashes[idx];
-            let cur_bucket = next_buckets[idx];
-            next_hashes[idx] = next_hash;
-            next_buckets[idx] = self.bucket(next_hashes[idx]);
-            crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
-            let pilot = self.pilots.as_ref().index(cur_bucket);
-            // NOTE: Caching `part` slows things down, so it's recomputed as part of `self.slot`.
-            // TODO: Verify
-            let slot = self.slot(cur_hash, pilot);
-            if MINIMAL && slot >= self.n {
-                self.remap.index(slot - self.n) as usize
-            } else {
-                slot
-            }
-        })
+        hashes.enumerate().map(
+            // This is needed to ensure enlining when remapping is true.
+            #[inline(always)]
+            move |(idx, next_hash)| {
+                let idx = idx % B;
+                let cur_hash = next_hashes[idx];
+                let cur_bucket = next_buckets[idx];
+                next_hashes[idx] = next_hash;
+                next_buckets[idx] = self.bucket(next_hashes[idx]);
+                crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
+                let pilot = self.pilots.as_ref().index(cur_bucket);
+                let slot = self.slot(cur_hash, pilot);
+
+                if MINIMAL && slot >= self.n {
+                    self.remap.index(slot - self.n) as usize
+                } else {
+                    slot
+                }
+            },
+        )
     }
 
     /// Takes an iterator over keys and returns an iterator over the indices of the keys.
