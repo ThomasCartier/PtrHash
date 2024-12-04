@@ -258,7 +258,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     pub fn new_random(n: usize, params: PtrHashParams<BF>) -> Self {
         let mut ptr_hash = Self::init(n, params);
         let k = (0..ptr_hash.buckets_total)
-            .map(|_| random::<u8>() as Pilot)
+            .map(|i| (i % 256) as Pilot)
             .collect();
         ptr_hash.pilots = MutPacked::new(k);
         let rem_s_total = FastReduce::new(ptr_hash.slots_total);
