@@ -324,11 +324,11 @@ fn benchmark_queries<
         eprintln!(" ( 1  / / )  : {query:>5.2}ns");
     }
 
-    for threads in [1] {
-        // let query = time(loops, keys, || {
-        //     index_parallel::<A, _, _, _, _>(pt, keys, threads, true, false)
-        // });
-        // eprintln!(" ({A}t{threads}/r/s)  : {query:>5.2}ns");
+    for threads in [1, 3, 6] {
+        let query = time(loops, keys, || {
+            index_parallel::<A, _, _, _, _, _>(pt, keys, threads, true, false)
+        });
+        eprintln!(" ({A}t{threads}/r/s)  : {query:>5.2}ns");
         // let query = time(loops, keys, || {
         //     index_parallel::<A, _, _, _, _>(pt, keys, threads, true, true)
         // });
