@@ -19,7 +19,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         part_starts: &[u32],
         pilots: &mut [u8],
         taken: &mut [BitVec],
-    ) -> bool {
+    ) -> Option<BucketStats> {
         let pilots_per_part = pilots.par_chunks_exact_mut(self.buckets);
 
         let iter = pilots_per_part.zip(taken).enumerate();
@@ -47,7 +47,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         });
 
         if ok.is_none() {
-            return false;
+            return None;
         }
 
         assert_eq!(
@@ -75,7 +75,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             stats.lock().unwrap().print();
         }
 
-        true
+        Some(stats.into_inner().unwrap())
     }
 
     fn build_part(

@@ -1,6 +1,6 @@
 use crate::Pilot;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, serde::Serialize, Debug)]
 struct Row {
     buckets: usize,
     elements: usize,
@@ -23,6 +23,7 @@ impl Row {
     }
 }
 
+#[derive(Default, serde::Serialize, Debug)]
 pub struct BucketStats {
     by_pct: Vec<Row>,
     by_bucket_len: Vec<Row>,
@@ -33,6 +34,36 @@ impl BucketStats {
         Self {
             by_pct: vec![Row::default(); 100],
             by_bucket_len: vec![Row::default(); 100],
+        }
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.by_pct.resize(100, Row::default());
+        self.by_bucket_len.resize(
+            self.by_bucket_len.len().max(other.by_bucket_len.len()),
+            Row::default(),
+        );
+        for (a, b) in self.by_pct.iter_mut().zip(other.by_pct.iter()) {
+            a.buckets += b.buckets;
+            a.elements += b.elements;
+            a.elements_max = a.elements_max.max(b.elements_max);
+            a.pilot_sum += b.pilot_sum;
+            a.pilot_max = a.pilot_max.max(b.pilot_max);
+            a.evictions += b.evictions;
+            a.evictions_max = a.evictions_max.max(b.evictions_max);
+        }
+        for (a, b) in self
+            .by_bucket_len
+            .iter_mut()
+            .zip(other.by_bucket_len.iter())
+        {
+            a.buckets += b.buckets;
+            a.elements += b.elements;
+            a.elements_max = a.elements_max.max(b.elements_max);
+            a.pilot_sum += b.pilot_sum;
+            a.pilot_max = a.pilot_max.max(b.pilot_max);
+            a.evictions += b.evictions;
+            a.evictions_max = a.evictions_max.max(b.evictions_max);
         }
     }
 

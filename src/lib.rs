@@ -67,6 +67,7 @@ use rand::{random, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 use rdst::RadixSort;
+use stats::BucketStats;
 use std::{borrow::Borrow, default::Default, marker::PhantomData, time::Instant};
 
 use crate::{hash::*, pack::Packed, reduce::*, util::log_duration};
@@ -235,8 +236,23 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     /// NOTE: Use `<PtrHash>::new()` or `DefaultPtrHash::new()` instead of simply `PtrHash::new()`.
     pub fn new(keys: &[Key], params: PtrHashParams<BF>) -> Self {
         let mut ptr_hash = Self::init(keys.len(), params);
-        ptr_hash.compute_pilots(keys.par_iter());
+        ptr_hash.compute_pilots(keys.par_iter()).unwrap();
         ptr_hash
+    }
+
+    /// Version that returns build statistics.
+    #[doc(hidden)]
+    pub fn new_with_stats(keys: &[Key], params: PtrHashParams<BF>) -> (Self, BucketStats) {
+        let mut ptr_hash = Self::init(keys.len(), params);
+        let stats = ptr_hash.compute_pilots(keys.par_iter()).unwrap();
+        (ptr_hash, stats)
+    }
+
+    /// Fallible version of `new` that returns `None` if construction fails.
+    pub fn try_new(keys: &[Key], params: PtrHashParams<BF>) -> Option<Self> {
+        let mut ptr_hash = Self::init(keys.len(), params);
+        ptr_hash.compute_pilots(keys.par_iter())?;
+        Some(ptr_hash)
     }
 
     /// Same as `new` above, but takes a `ParallelIterator` over keys instead of a slice.
@@ -336,25 +352,24 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     fn compute_pilots<'a>(
         &mut self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
-    ) {
+    ) -> Option<BucketStats> {
         let overall_start = std::time::Instant::now();
         // Initialize arrays;
         let mut taken: Vec<BitVec> = vec![];
         let mut pilots: Vec<u8> = vec![];
 
         let mut tries = 0;
-        const MAX_TRIES: usize = 3;
+        const MAX_TRIES: usize = 1;
 
         let mut rng = ChaCha8Rng::seed_from_u64(31415);
 
         // Loop over global seeds `s`.
-        's: loop {
+        let stats = 's: loop {
             tries += 1;
-            assert!(
-                tries <= MAX_TRIES,
-                "Failed to find a global seed after {MAX_TRIES} tries for {} keys.",
-                self.slots
-            );
+            if tries > MAX_TRIES {
+                eprintln!("Failed to find a global seed after {MAX_TRIES} tries.");
+                return None;
+            }
             if tries > 1 {
                 eprintln!("Try {tries} for global seed.");
             }
@@ -384,6 +399,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             };
             let shard_pilots = pilots.chunks_mut(self.buckets * self.parts_per_shard);
             let shard_taken = taken.chunks_mut(self.parts_per_shard);
+            let mut stats = BucketStats::default();
             // eprintln!("Num shards (keys) {}", shard_keys.());
             for (shard, (hashes, pilots, taken)) in
                 izip!(shard_hashes, shard_pilots, shard_taken).enumerate()
@@ -397,10 +413,14 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                 let start = log_duration("sort buckets", start);
 
                 // Compute pilots.
-                if !self.build_shard(shard, &hashes, &part_starts, pilots, taken) {
+                if let Some(shard_stats) =
+                    self.build_shard(shard, &hashes, &part_starts, pilots, taken)
+                {
+                    stats.merge(shard_stats);
+                    log_duration("find pilots", start);
+                } else {
                     continue 's;
                 }
-                log_duration("find pilots", start);
             }
 
             // Found a suitable seed.
@@ -408,8 +428,8 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                 eprintln!("Found seed after {tries} tries.");
             }
 
-            break 's;
-        }
+            break 's stats;
+        };
 
         let start = std::time::Instant::now();
         self.remap_free_slots(taken);
@@ -420,6 +440,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
 
         self.print_bits_per_element();
         log_duration("total build", overall_start);
+        Some(stats)
     }
 
     fn remap_free_slots(&mut self, taken: Vec<BitVec>) {
