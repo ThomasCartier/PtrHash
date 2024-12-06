@@ -53,6 +53,10 @@ impl Default for Skewed {
 impl Skewed {
     // Map the first beta% of hashes to the first gamma% of buckets.
     pub fn new(beta: f64, gamma: f64) -> Self {
+        assert!(
+            beta > gamma,
+            "Beta={beta} must be larger than gamma={gamma}"
+        );
         Self {
             beta_f: beta,
             gamma_f: gamma,
@@ -157,19 +161,6 @@ mod test {
         let n = 100;
         for i in 0..100 {
             let x = u64::MAX / n * i;
-            let y = skewed.call(x);
-            println!("{x:>20} => {y:>20}");
-        }
-        let beta = 11068046444225730960;
-        for x in 0..50 {
-            let y = skewed.call(x);
-            println!("{x:>20} => {y:>20}");
-        }
-        for x in beta - 50..beta + 50 {
-            let y = skewed.call(x);
-            println!("{x:>20} => {y:>20}");
-        }
-        for x in u64::MAX - 50..=u64::MAX {
             let y = skewed.call(x);
             println!("{x:>20} => {y:>20}");
         }

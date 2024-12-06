@@ -318,8 +318,8 @@ fn benchmark_queries<
     eprintln!("BENCHMARKING A={A}\t loops {loops}");
 
     if A == 1 {
-        // let query = bench_index(loops, keys, |key| pt.index_minimal(key));
-        // eprintln!(" ( 1  /r/ ): {query:>5.2}");
+        let query = bench_index(loops, keys, |key| pt.index_minimal(key));
+        eprintln!(" ( 1  /r/ )  : {query:>5.2}ns");
         let query = bench_index(loops, keys, |key| pt.index(key));
         eprintln!(" ( 1  / / )  : {query:>5.2}ns");
     }
@@ -328,7 +328,7 @@ fn benchmark_queries<
         let query = time(loops, keys, || {
             index_parallel::<A, _, _, _, _, _>(pt, keys, threads, true, false)
         });
-        eprintln!(" ({A}t{threads}/r/s)  : {query:>5.2}ns");
+        eprintln!(" ({A:2}t{threads}/r/s)  : {query:>5.2}ns");
         // let query = time(loops, keys, || {
         //     index_parallel::<A, _, _, _, _>(pt, keys, threads, true, true)
         // });
