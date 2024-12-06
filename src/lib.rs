@@ -58,7 +58,6 @@ use bitvec::{bitvec, vec::BitVec};
 use bucket_fn::BucketFn;
 use bucket_fn::CubicEps;
 use cacheline_ef::CachelineEfVec;
-use either::Either;
 use itertools::izip;
 use itertools::Itertools;
 use pack::EliasFano;
@@ -67,19 +66,11 @@ use rand::{random, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 use rdst::RadixSort;
+pub use shard::Sharding;
 use stats::BucketStats;
 use std::{borrow::Borrow, default::Default, marker::PhantomData, time::Instant};
 
 use crate::{hash::*, pack::Packed, reduce::*, util::log_duration};
-
-/// Select the sharding method to use.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
-pub enum Sharding {
-    #[default]
-    None,
-    Memory,
-    Disk,
-}
 
 /// Parameters for PtrHash construction.
 ///
@@ -388,15 +379,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             taken.resize_with(self.parts, || bitvec![0; self.slots]);
 
             // Iterate over shards.
-            let shard_hashes = match self.params.sharding {
-                Sharding::None => Either::Left(self.no_sharding(keys.clone())),
-                Sharding::Memory => {
-                    Either::Right(Either::Left(self.shard_keys_to_disk(keys.clone())))
-                }
-                Sharding::Disk => {
-                    Either::Right(Either::Right(self.shard_keys_in_memory(keys.clone())))
-                }
-            };
+            let shard_hashes = self.shards(keys.clone());
             let shard_pilots = pilots.chunks_mut(self.buckets * self.parts_per_shard);
             let shard_taken = taken.chunks_mut(self.parts_per_shard);
             let mut stats = BucketStats::default();

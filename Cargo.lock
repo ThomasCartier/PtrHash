@@ -805,7 +805,6 @@ dependencies = [
  "clap",
  "colored",
  "common_traits 0.10.2",
- "either",
  "epserde",
  "epserde-derive",
  "fastmurmur3",

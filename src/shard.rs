@@ -8,31 +8,53 @@ use std::{
 
 use super::*;
 
+/// Select the sharding method to use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
+pub enum Sharding {
+    #[default]
+    None,
+    Memory,
+    Disk,
+}
+
 impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx> {
     /// Return an iterator over shards.
     /// For each shard, a filtered copy of the ParallelIterator is returned.
-    pub(crate) fn no_sharding<'a>(
+    pub(crate) fn shards<'a>(
         &'a self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
-    ) -> impl Iterator<Item = Vec<Hx::H>> + 'a {
+    ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
+        match self.params.sharding {
+            Sharding::None => self.no_sharding(keys.clone()),
+            Sharding::Memory => self.shard_keys_to_disk(keys.clone()),
+            Sharding::Disk => self.shard_keys_in_memory(keys.clone()),
+        }
+    }
+
+    /// Return an iterator over shards.
+    /// For each shard, a filtered copy of the ParallelIterator is returned.
+    fn no_sharding<'a>(
+        &'a self,
+        keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
+    ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
         if self.params.print_stats {
             eprintln!("No sharding: collecting all hashes in memory.");
         }
         let start = std::time::Instant::now();
         let hashes = keys.map(|key| self.hash_key(key.borrow())).collect();
         log_duration("collect hash", start);
-        std::iter::once(hashes)
+        Box::new(std::iter::once(hashes))
     }
 
     /// Loop over the keys once per shard.
     /// Return an iterator over shards.
     /// For each shard, a filtered copy of the ParallelIterator is returned.
-    pub(crate) fn shard_keys_in_memory<'a>(
+    fn shard_keys_in_memory<'a>(
         &'a self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
-    ) -> impl Iterator<Item = Vec<Hx::H>> + 'a {
+    ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
         eprintln!("In-memory sharding: iterate keys once per shard.");
-        (0..self.shards).map(move |shard| {
+        let it = (0..self.shards).map(move |shard| {
             eprintln!("Shard {shard:>3}/{:3}", self.shards);
             let start = std::time::Instant::now();
             let hashes = keys
@@ -43,7 +65,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
 
             log_duration("collect shrd", start);
             hashes
-        })
+        });
+        Box::new(it)
     }
 
     /// Loop over the keys and write each keys hash to the corresponding shard.
@@ -53,10 +76,10 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
     ///
     /// This is based on `SigStore` in `sux-rs`, but simplified for the specific use case here.
     /// https://github.com/vigna/sux-rs/blob/main/src/utils/sig_store.rs
-    pub(crate) fn shard_keys_to_disk<'a>(
+    fn shard_keys_to_disk<'a>(
         &'a self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
-    ) -> impl Iterator<Item = Vec<Hx::H>> + 'a {
+    ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
         eprintln!("Disk sharding: writing hashes per shard to disk.");
         let temp_dir = tempfile::TempDir::new().unwrap();
         eprintln!("TMP PATH: {:?}", temp_dir.path());
@@ -106,7 +129,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             })
             .collect_vec();
 
-        files.into_iter().map(move |(f, cnt)| {
+        let it = files.into_iter().map(move |(f, cnt)| {
             let mut v = vec![Hx::H::default(); cnt];
             let mut f = BufReader::new(f);
             let (pre, data, post) = unsafe { v.align_to_mut::<u8>() };
@@ -114,7 +137,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             assert!(post.is_empty());
             f.read_exact(data).unwrap();
             v
-        })
+        });
+        Box::new(it)
     }
 }
 
