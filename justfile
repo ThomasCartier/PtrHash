@@ -61,3 +61,8 @@ qm *args="":
 
 modules *args="":
     cargo modules generate tree --lib --fns --traits --types {{args}}
+
+## Paper evals
+evals: cpufreq
+    mkdir -p data
+    cargo run -r --example evals

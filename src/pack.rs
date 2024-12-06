@@ -16,6 +16,7 @@ pub trait Packed: Sync {
 pub trait MutPacked: Packed {
     fn default() -> Self;
     fn new(vals: Vec<u64>) -> Self;
+    fn name() -> String;
 }
 
 macro_rules! vec_impl {
@@ -31,6 +32,9 @@ macro_rules! vec_impl {
                             .expect(&format!("Value {x} is larger than backing type can hold."))
                     })
                     .collect()
+            }
+            fn name() -> String {
+                stringify!(Vec<$t>).to_string()
             }
         }
         impl Packed for Vec<$t> {
@@ -80,6 +84,9 @@ impl MutPacked for CachelineEfVec<Vec<CachelineEf>> {
     fn new(vals: Vec<u64>) -> Self {
         Self::new(&vals)
     }
+    fn name() -> String {
+        "CacheLineEF".to_string()
+    }
 }
 
 impl<T: AsRef<[CachelineEf]> + Sync> Packed for CachelineEfVec<T> {
@@ -111,6 +118,9 @@ impl MutPacked for EliasFano {
             builder.extend(vals.iter().map(|&x| x as usize)).unwrap();
             EliasFano(builder.build())
         }
+    }
+    fn name() -> String {
+        "EF".to_string()
     }
 }
 

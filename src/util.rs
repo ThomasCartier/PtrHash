@@ -72,3 +72,9 @@ pub fn generate_keys(n: usize) -> Vec<u64> {
     log_duration("generatekeys", start);
     keys
 }
+
+pub fn time<T>(mut f: impl FnMut() -> T) -> (T, f64) {
+    let start = Instant::now();
+    let t = f();
+    (t, start.elapsed().as_secs_f64())
+}
