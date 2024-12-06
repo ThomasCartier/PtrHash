@@ -1,7 +1,7 @@
 alias c := clean
 
 cpufreq:
-    sudo cpupower frequency-set --governor performance -d 3.6GHz -u 3.6GHz > /dev/null
+    sudo cpupower frequency-set --governor performance -d 2.6GHz -u 2.6GHz > /dev/null
 
 @clean:
     cargo clean

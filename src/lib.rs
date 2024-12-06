@@ -50,13 +50,13 @@ mod build;
 mod reduce;
 mod shard;
 mod sort_buckets;
-mod stats;
+pub mod stats;
 #[cfg(test)]
 mod test;
 
 use bitvec::{bitvec, vec::BitVec};
 use bucket_fn::BucketFn;
-use bucket_fn::Linear;
+use bucket_fn::CubicEps;
 use cacheline_ef::CachelineEfVec;
 use either::Either;
 use itertools::izip;
@@ -95,10 +95,10 @@ pub struct PtrHashParams<BF> {
     /// Bucket function
     pub bucket_fn: BF,
     /// #slots/part will be the largest power of 2 not larger than this.
-    /// Default is 2^18.
+    /// Default is 2^20.
     pub slots_per_part: usize,
     /// Upper bound on number of keys per shard.
-    /// Default is 2^33, or 32GB of hashes per shard.
+    /// Default is 2^32, or 32GB of hashes per shard.
     pub keys_per_shard: usize,
     /// When true, write each shard to a file instead of iterating multiple
     /// times.
@@ -111,15 +111,15 @@ pub struct PtrHashParams<BF> {
 /// Default parameter values should provide reasonably fast construction for all n up to 2^32:
 /// - `alpha=0.98`
 /// - `c=9.0`
-/// - `slots_per_part=2^18=262144`
-impl Default for PtrHashParams<Linear> {
+/// - `slots_per_part=2^20~10^6`
+impl Default for PtrHashParams<CubicEps> {
     fn default() -> Self {
         Self {
             remap: true,
             alpha: 0.98,
             lambda: 3.5,
-            bucket_fn: Linear,
-            slots_per_part: 1 << 18,
+            bucket_fn: CubicEps,
+            slots_per_part: 1 << 20,
             // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^32=32GB.
             keys_per_shard: 1 << 32,
             sharding: Sharding::None,
@@ -132,10 +132,10 @@ impl Default for PtrHashParams<Linear> {
 
 /// An alias for PtrHash with default generic arguments.
 /// Using this, you can write `DefaultPtrHash::new()` instead of `<PtrHash>::new()`.
-pub type DefaultPtrHash<H, Key> = PtrHash<Key, CachelineEfVec, H, Vec<u8>>;
+pub type DefaultPtrHash<H, Key, BF> = PtrHash<Key, BF, CachelineEfVec, H, Vec<u8>>;
 
 /// Using EliasFano for the remap is slower but uses slightly less memory.
-pub type EfPtrHash<H, Key> = PtrHash<Key, EliasFano, H, Vec<u8>>;
+pub type EfPtrHash<H, Key> = PtrHash<Key, CubicEps, EliasFano, H, Vec<u8>>;
 
 /// Trait that keys must satisfy.
 pub trait KeyT: Default + Send + Sync + std::hash::Hash {}
@@ -158,7 +158,7 @@ type PilotHash = u64;
 #[derive(Clone)]
 pub struct PtrHash<
     Key: KeyT = u64,
-    BF: BucketFn = bucket_fn::Linear,
+    BF: BucketFn = bucket_fn::CubicEps,
     F: Packed = CachelineEfVec,
     Hx: Hasher<Key> = hash::FxHash,
     V: AsRef<[u8]> = Vec<u8>,
@@ -462,9 +462,9 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 {
     /// Return the number of bits per element used for the pilots (`.0`) and the
     /// remapping (`.1)`.
-    pub fn bits_per_element(&self) -> (f32, f32) {
-        let pilots = self.pilots.as_ref().size_in_bytes() as f32 / self.n as f32;
-        let remap = self.remap.size_in_bytes() as f32 / self.n as f32;
+    pub fn bits_per_element(&self) -> (f64, f64) {
+        let pilots = self.pilots.as_ref().size_in_bytes() as f64 / self.n as f64;
+        let remap = self.remap.size_in_bytes() as f64 / self.n as f64;
         (8. * pilots, 8. * remap)
     }
 
@@ -550,7 +550,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
         }
         hashes.enumerate().map(
-            // This is needed to ensure enlining when remapping is true.
+            // This is needed to ensure inlining when remapping is true.
             #[inline(always)]
             move |(idx, next_hash)| {
                 let idx = idx % B;

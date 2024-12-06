@@ -26,8 +26,8 @@ struct Args {
 
 const DEFAULT_LAMBDA: f64 = 3.5;
 const DEFAULT_ALPHA: f64 = 0.98;
-const DEFAULT_SLOTS_PER_PART: usize = 1 << 18;
-const DEFAULT_KEYS_PER_SHARD: usize = 1 << 33;
+const DEFAULT_SLOTS_PER_PART: usize = 1 << 20;
+const DEFAULT_KEYS_PER_SHARD: usize = 1 << 32;
 const DEFAULT_SHARDING: Sharding = Sharding::None;
 
 #[derive(Subcommand)]
@@ -120,7 +120,7 @@ fn main() -> anyhow::Result<()> {
                 .build_global()
                 .unwrap();
             let keys = ptr_hash::util::generate_keys(n);
-            let pt = PH::<_, Linear>::new(
+            let pt = PH::<_, CubicEps>::new(
                 &keys,
                 PtrHashParams {
                     lambda,

@@ -90,11 +90,11 @@ impl BucketFn for Skewed {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Perfect {
+pub struct Optimal {
     pub eps: f64,
 }
 
-impl BucketFn for Perfect {
+impl BucketFn for Optimal {
     fn call(&self, x: u64) -> u64 {
         let p32 = (1u64 << 32) as f64;
         let p64 = p32 * p32;
@@ -120,7 +120,7 @@ pub struct SquareEps;
 
 impl BucketFn for SquareEps {
     fn call(&self, x: u64) -> u64 {
-        mul_high(x, x) / 128 * 127 + x / 128
+        mul_high(x, x) / 256 * 255 + x / 256
     }
 }
 
