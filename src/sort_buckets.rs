@@ -62,23 +62,47 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
 
         // Check max part len.
         let mut max_part_len = 0;
-        for (part, (start, end)) in part_starts.iter().tuple_windows().enumerate() {
-            let len = end - start;
+        for (start, end) in part_starts.iter().tuple_windows() {
+            let len = (end - start) as usize;
             max_part_len = max_part_len.max(len);
-            if len as usize > self.slots {
-                eprintln!(
-                    "Shard {shard} Part {part}: More elements than slots! elements {len} > {} slots",
-                    self.slots
-                );
-                return None;
-            }
         }
-        if self.params.print_stats {
-            eprintln!("max key/part: {max_part_len:>10}",);
+        if self.params.print_stats || true {
+            let exp = self.n / self.parts;
+            let stddev = exp.isqrt();
+            // https://math.stackexchange.com/a/89147/91741:
+            // expected max of N (here #parts) samples of a random variable is
+            // exp + sigma * sqrt(2 * ln N).
+            let exp_max = exp + stddev * ((self.parts as f32).ln() * 2.).sqrt() as usize;
+            eprintln!("exp key/part: {exp:>10} stddev {stddev:>10}");
+            eprintln!(
+                "exp max k/pt: {exp_max:>10}        {:>10} {:>8.2}",
+                exp_max - exp,
+                (exp_max - exp) as f32 / stddev as f32
+            );
+            eprintln!(
+                "    max k/pt: {max_part_len:>10}        {:>10} {:>8.2}",
+                max_part_len - exp,
+                (max_part_len - exp) as f32 / stddev as f32
+            );
+            eprintln!(
+                "    slots/pt: {:>10}        {:>10} {:>8.2}",
+                self.slots,
+                self.slots - exp,
+                (self.slots - exp) as f32 / stddev as f32
+            );
+            eprintln!("exp    alpha: {:>13.2}%", 100. * self.params.alpha);
             eprintln!(
                 "max    alpha: {:>13.2}%",
                 100. * max_part_len as f32 / self.slots as f32
             );
+        }
+
+        if max_part_len as usize > self.slots {
+            eprintln!(
+                    "Shard {shard}: Part has more elements than slots! elements {max_part_len} > {} slots",
+                    self.slots
+                );
+            return None;
         }
 
         log_duration("├part starts", start);
