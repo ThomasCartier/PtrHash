@@ -160,8 +160,21 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                         eprintln!(
                             "\
 Too many evictions. Aborting!
-Try decreasing lambda to use fewer elements per buckets.
-"
+When the current bucket has size >=2, try decreasing lambda to use fewer elements per buckets.
+When the current bucket has size 1 (or maybe 2), try decreasing alpha to have more empty slots for the last few buckets.
+
+Current part: {part:>6} with load factor alpha={:>5.2}%
+Current bucket: size {} ({}/{}, {:>5.2}%)
+Slots filled so far: {}/{} ({:>5.2}%)
+Eviction chain length: {evictions:>9}
+",
+                            100. * hashes.len()  as f32 / slots.len() as f32,
+                            new_b_len,
+                            i, self.buckets,
+                            100. * i as f32 / self.buckets as f32,
+                            num_taken_slots,
+                            taken.len(),
+                            100. * num_taken_slots as f32 / taken.len() as f32,
                         );
                         return None;
                     }
