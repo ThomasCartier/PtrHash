@@ -2,43 +2,67 @@ use std::{
     fs::File,
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     sync::Mutex,
-    thread,
-    time::Duration,
 };
+
+use clap::builder::PossibleValue;
 
 use super::*;
 
 /// Select the sharding method to use.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Sharding {
+    /// Process all hashes as a single Vec in memory.
     #[default]
     None,
+    /// Repeatedly hash all elements, and each time only process a chunk of 2^32 of them.
     Memory,
+    /// Hash everything once, write shards of up to 2^32 hashes to disk.
     Disk,
+    /// Hybrid that repeatedly fills the given amount (in bytes) of disk space with hashes.
+    Hybrid(usize),
+}
+
+impl clap::ValueEnum for Sharding {
+    fn value_variants<'a>() -> &'a [Self] {
+        // 128 GiB for Hybrid.
+        &[
+            Sharding::None,
+            Sharding::Memory,
+            Sharding::Disk,
+            Sharding::Hybrid(1 << 37),
+        ]
+    }
+    fn to_possible_value<'a>(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Sharding::None => PossibleValue::new("none"),
+            Sharding::Memory => PossibleValue::new("memory"),
+            Sharding::Disk => PossibleValue::new("disk"),
+            Sharding::Hybrid(_) => PossibleValue::new("hybrid"),
+        })
+    }
 }
 
 impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx> {
-    /// Return an iterator over shards.
-    /// For each shard, a filtered copy of the ParallelIterator is returned.
+    /// Return an iterator over the Vec of hashes of each shard.
     pub(crate) fn shards<'a>(
         &'a self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
         match self.params.sharding {
             Sharding::None => self.no_sharding(keys.clone()),
-            Sharding::Memory => self.shard_keys_to_disk(keys.clone()),
-            Sharding::Disk => self.shard_keys_in_memory(keys.clone()),
+            Sharding::Memory => self.shard_keys_in_memory(keys.clone()),
+            Sharding::Disk => self.shard_keys_hybrid(usize::MAX, keys.clone()),
+            Sharding::Hybrid(mem) => self.shard_keys_hybrid(mem, keys.clone()),
         }
     }
 
-    /// Return an iterator over shards.
-    /// For each shard, a filtered copy of the ParallelIterator is returned.
+    /// Collect all hashes to a Vec directly and return it.
     fn no_sharding<'a>(
         &'a self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
         if self.params.print_stats {
-            eprintln!("No sharding: collecting all hashes in memory.");
+            eprintln!("No sharding: collecting all {} hashes in memory.", self.n);
         }
         let start = std::time::Instant::now();
         let hashes = keys.map(|key| self.hash_key(key.borrow())).collect();
@@ -53,16 +77,20 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         &'a self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
-        eprintln!("In-memory sharding: iterate keys once per shard.");
+        eprintln!(
+            "In-memory sharding: iterate keys once for each of {} shards, each of ~{} keys.",
+            self.shards,
+            self.n / self.shards
+        );
         let it = (0..self.shards).map(move |shard| {
-            eprintln!("Shard {shard:>3}/{:3}", self.shards);
+            eprint!("Shard {shard:>3}/{:3}\r", self.shards);
             let start = std::time::Instant::now();
-            let hashes = keys
+            let hashes: Vec<_> = keys
                 .clone()
                 .map(|key| self.hash_key(key.borrow()))
                 .filter(move |h| self.shard(*h) == shard)
                 .collect();
-
+            eprintln!("Shard {shard:>3}/{:3}: {} keys", self.shards, hashes.len());
             log_duration("collect shrd", start);
             hashes
         });
@@ -76,68 +104,97 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
     ///
     /// This is based on `SigStore` in `sux-rs`, but simplified for the specific use case here.
     /// https://github.com/vigna/sux-rs/blob/main/src/utils/sig_store.rs
-    fn shard_keys_to_disk<'a>(
+    fn shard_keys_hybrid<'a>(
         &'a self,
+        mem: usize,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
-        eprintln!("Disk sharding: writing hashes per shard to disk.");
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        eprintln!("TMP PATH: {:?}", temp_dir.path());
+        let total_shards = self.shards;
+        let keys_per_shard = self.n / total_shards;
+        let shards_on_disk = mem / std::mem::size_of::<Hx::H>() / keys_per_shard;
+        assert!(
+            shards_on_disk > 0,
+            "Each shard takes more than the provided memory."
+        );
+        if mem < usize::MAX {
+            eprintln!("Hybrid sharding: writing hashes to disk for {shards_on_disk} shards at a time, for total {} shards each of ~{} keys.", self.shards, self.n / self.shards);
+        } else {
+            eprintln!(
+                "On-disk sharding: writing hashes to disk for all {} shards at a time, each of ~{} keys.",
+                self.shards, self.n / self.shards
 
-        // Create a file writer and count for each shard.
-        let writers = (0..self.shards)
-            .map(|shard| {
-                Mutex::new((
-                    BufWriter::new(
-                        File::options()
-                            .read(true)
-                            .write(true)
-                            .create(true)
-                            .open(temp_dir.path().join(format!("{}.tmp", shard)))
-                            .unwrap(),
-                    ),
-                    0,
-                ))
-            })
-            .collect_vec();
-
-        // Each thread has a local buffer per shard.
-        let init = || writers.iter().map(ThreadLocalBuf::new).collect_vec();
-        // Iterate over keys.
-        keys.for_each_init(init, |bufs, key| {
-            let h = self.hash_key(key.borrow());
-            let shard = self.shard(h);
-            bufs[shard].push(h);
-        });
-
-        eprintln!("Wrote all files. Pausing.");
-        for w in &writers {
-            let c = w.lock().unwrap().1;
-            eprintln!("Count: {c}");
+            );
         }
-        thread::sleep(Duration::from_secs(10));
 
-        // Convert writers to files.
-        let files = writers
-            .into_iter()
-            .map(|w| {
-                let (mut w, cnt) = w.into_inner().unwrap();
-                w.flush().unwrap();
-                let mut file = w.into_inner().unwrap();
-                file.seek(SeekFrom::Start(0)).unwrap();
-                (file, cnt)
-            })
-            .collect_vec();
+        let it = (0..self.shards)
+            .step_by(shards_on_disk)
+            .flat_map(move |first_shard| {
+                let temp_dir = tempfile::TempDir::new().unwrap();
+                eprintln!("TMP PATH: {:?}", temp_dir.path());
 
-        let it = files.into_iter().map(move |(f, cnt)| {
-            let mut v = vec![Hx::H::default(); cnt];
-            let mut f = BufReader::new(f);
-            let (pre, data, post) = unsafe { v.align_to_mut::<u8>() };
-            assert!(pre.is_empty());
-            assert!(post.is_empty());
-            f.read_exact(data).unwrap();
-            v
-        });
+                let shard_range = first_shard..(first_shard + shards_on_disk).min(self.shards);
+                eprintln!("Writing keys for shards {shard_range:?}/{}", self.shards);
+
+                // Create a file writer and count for each shard.
+                let writers = shard_range
+                    .clone()
+                    .map(|shard| {
+                        Mutex::new((
+                            BufWriter::new(
+                                File::options()
+                                    .read(true)
+                                    .write(true)
+                                    .create(true)
+                                    .open(temp_dir.path().join(format!("{}.tmp", shard)))
+                                    .unwrap(),
+                            ),
+                            0,
+                        ))
+                    })
+                    .collect_vec();
+
+                // Each thread has a local buffer per shard.
+                let init = || writers.iter().map(ThreadLocalBuf::new).collect_vec();
+                // Iterate over keys.
+                keys.clone()
+                    .map(|key| self.hash_key(key.borrow()))
+                    .for_each_init(init, |bufs, h| {
+                        let shard = self.shard(h);
+                        if shard_range.contains(&shard) {
+                            bufs[shard - shard_range.start].push(h);
+                        }
+                    });
+
+                eprintln!("Wrote all files.");
+
+                // Convert writers to files.
+                let files = writers
+                    .into_iter()
+                    .map(|w| {
+                        let (mut w, cnt) = w.into_inner().unwrap();
+                        w.flush().unwrap();
+                        let mut file = w.into_inner().unwrap();
+                        file.seek(SeekFrom::Start(0)).unwrap();
+                        (file, cnt)
+                    })
+                    .collect_vec();
+
+                files
+                    .into_iter()
+                    .zip(shard_range)
+                    .map(move |((f, cnt), shard)| {
+                        let mut v = vec![Hx::H::default(); cnt];
+                        let mut reader = BufReader::new(f);
+                        let (pre, data, post) = unsafe { v.align_to_mut::<u8>() };
+                        assert!(pre.is_empty());
+                        assert!(post.is_empty());
+                        reader.read_exact(data).unwrap();
+                        eprintln!("Read {shard:>3}/{:3}: {} keys", self.shards, cnt);
+                        v
+                    })
+
+                // Files are cleaned up automatically when tmpdir goes out of scope.
+            });
         Box::new(it)
     }
 }
