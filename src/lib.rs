@@ -1,3 +1,6 @@
+// TODO:
+// - Specialization for instances with a single part.
+// - Use trace instead of eprintln.
 #![feature(iter_array_chunks)]
 //! PTRHash is a minimal perfect hash function.
 //!
@@ -377,6 +380,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             eprintln!("       parts: {parts:>10}");
             eprintln!("   slots/prt: {slots_per_part:>10}");
             eprintln!("   slots tot: {slots_total:>10}");
+            eprintln!("  real alpha: {:>10.4}", n as f64 / slots_total as f64);
             eprintln!(" buckets/prt: {buckets_per_part:>10}");
             eprintln!(" buckets tot: {buckets_total:>10}");
             eprintln!("keys/ bucket: {:>13.2}", n as f64 / buckets_total as f64);
@@ -438,9 +442,12 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             self.seed = rng.gen();
 
             // Reset output-memory.
+            eprintln!("Pilots: {}MB", self.buckets_total / 1_000_000);
             pilots.clear();
             pilots.resize(self.buckets_total, 0);
 
+            // TODO: Compress taken on the fly, instead of pre-allocating the entire thing.
+            eprintln!("Taken: {}MB", self.parts * self.slots / 8 / 1_000_000);
             for taken in taken.iter_mut() {
                 taken.clear();
                 taken.resize(self.slots, false);
@@ -525,7 +532,13 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             }
             v.push(i as u64);
         }
+        eprintln!("Remap len: {}", v.len());
         self.remap = MutPacked::new(v);
+        eprintln!(
+            "Remap size: {}MB = {}B",
+            self.remap.size_in_bytes() / 1_000_000,
+            self.remap.size_in_bytes()
+        );
     }
 }
 
