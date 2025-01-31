@@ -1,5 +1,5 @@
 #![allow(unused)]
-use bucket_fn::{BucketFn, Linear};
+use bucket_fn::{BucketFn, CubicEps, Linear, Skewed};
 use cacheline_ef::CachelineEfVec;
 use clap::{Parser, Subcommand};
 #[cfg(feature = "epserde")]
@@ -26,7 +26,6 @@ struct Args {
 
 const DEFAULT_LAMBDA: f64 = 3.5;
 const DEFAULT_ALPHA: f64 = 0.98;
-const DEFAULT_SLOTS_PER_PART: usize = 1 << 20;
 const DEFAULT_KEYS_PER_SHARD: usize = 1 << 32;
 const DEFAULT_SHARDING: Sharding = Sharding::None;
 
@@ -40,8 +39,8 @@ enum Command {
         lambda: f64,
         #[arg(short, default_value_t = DEFAULT_ALPHA)]
         alpha: f64,
-        #[arg(short, default_value_t = DEFAULT_SLOTS_PER_PART)]
-        s: usize,
+        #[arg(short)]
+        s: Option<usize>,
         #[arg(short, default_value_t = DEFAULT_KEYS_PER_SHARD)]
         keys_per_shard: usize,
         #[arg(long, value_enum, default_value_t = DEFAULT_SHARDING)]
@@ -63,8 +62,8 @@ enum Command {
         lambda: f64,
         #[arg(short, default_value_t = DEFAULT_ALPHA)]
         alpha: f64,
-        #[arg(short, default_value_t = DEFAULT_SLOTS_PER_PART)]
-        s: usize,
+        #[arg(short)]
+        s: Option<usize>,
         #[arg(short, default_value_t = DEFAULT_KEYS_PER_SHARD)]
         keys_per_shard: usize,
         #[arg(long, value_enum, default_value_t = DEFAULT_SHARDING)]
@@ -84,8 +83,8 @@ enum Command {
         lambda: f64,
         #[arg(short, default_value_t = DEFAULT_ALPHA)]
         alpha: f64,
-        #[arg(short, default_value_t = DEFAULT_SLOTS_PER_PART)]
-        s: usize,
+        #[arg(short)]
+        s: Option<usize>,
         #[arg(short, default_value_t = DEFAULT_KEYS_PER_SHARD)]
         keys_per_shard: usize,
         #[arg(long, value_enum, default_value_t = DEFAULT_SHARDING)]
@@ -99,7 +98,7 @@ enum Command {
     },
 }
 
-type PH<Key, BF> = PtrHash<Key, BF, CachelineEfVec, hash::FxHash, Vec<u8>>;
+type PH<Key, BF> = PtrHash<Key, BF, Vec<u32>, hash::FxHash, Vec<u8>>;
 
 fn main() -> anyhow::Result<()> {
     let Args { command } = Args::parse();
@@ -120,7 +119,7 @@ fn main() -> anyhow::Result<()> {
                 .build_global()
                 .unwrap();
             let keys = ptr_hash::util::generate_keys(n);
-            let pt = PH::<_, CubicEps>::new(
+            let pt = PH::<_, Linear>::new(
                 &keys,
                 PtrHashParams {
                     lambda,
@@ -129,7 +128,7 @@ fn main() -> anyhow::Result<()> {
                     slots_per_part: s,
                     keys_per_shard,
                     sharding,
-                    ..Default::default()
+                    ..PtrHashParams::default_linear()
                 },
             );
 
@@ -162,39 +161,43 @@ fn main() -> anyhow::Result<()> {
                 slots_per_part: s,
                 keys_per_shard,
                 sharding,
-                ..Default::default()
+                bucket_fn: Linear,
+                remap: true,
+            };
+            let params2 = PtrHashParams {
+                lambda,
+                alpha,
+                print_stats: stats,
+                slots_per_part: s,
+                keys_per_shard,
+                sharding,
+                bucket_fn: CubicEps,
+                remap: true,
             };
 
-            if let Some(keys_file) = keys {
-                // read file keys_file
-                let file = std::fs::read_to_string(keys_file).unwrap();
-                let keys = file.lines().map(|l| l.as_bytes()).collect_vec();
-                // let pt = DefaultPtrHash::<Murmur2_64, _>::new(&keys, params);
-                // benchmark_queries(total, &keys, &pt);
-                bench_hashers(total, &params, &keys);
-            } else {
-                let keys = ptr_hash::util::generate_keys(n);
-                #[cfg(feature = "epserde")]
-                let pt = <PtrHash>::mmap("pt.bin", Flags::default())?;
-                #[cfg(not(feature = "epserde"))]
-                let pt = <PtrHash>::new_random(n, params);
-                // benchmark_queries::<1, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<2, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<3, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<4, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<8, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<10, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<12, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<14, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<16, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<18, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<20, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<24, _, _, _, _>(total, &keys, &pt);
-                benchmark_queries::<32, _, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<48, _, _, _, _>(total, &keys, &pt);
-                // benchmark_queries::<64, _, _, _, _>(total, &keys, &pt);
-                // bench_hashers(total, &params, &keys);
-            }
+            let keys = ptr_hash::util::generate_keys(n);
+
+            eprintln!("REMAP: Vec<u32>\n");
+            let pt = <PtrHash<_, _, Vec<u32>>>::new_random(n, params);
+            eprintln!("Linear bucket fn");
+            benchmark_queries::<1, _, _, _, _, _>(total, &keys, &pt);
+            // benchmark_queries::<32, _, _, _, _, _>(total, &keys, &pt);
+
+            // eprintln!("Cubic bucket fn");
+            // let pt = <PtrHash<_, _, Vec<u32>>>::new_random(n, params2);
+            // benchmark_queries::<1, _, _, _, _, _>(total, &keys, &pt);
+            // // benchmark_queries::<32, _, _, _, _, _>(total, &keys, &pt);
+
+            // eprintln!("REMAP: CLEF\n");
+            // let pt = <PtrHash<_, _, CachelineEfVec>>::new_random(n, params);
+            // eprintln!("Linear bucket fn");
+            // benchmark_queries::<1, _, _, _, _, _>(total, &keys, &pt);
+            // // benchmark_queries::<32, _, _, _, _, _>(total, &keys, &pt);
+
+            // eprintln!("Cubic bucket fn");
+            // let pt = <PtrHash<_, _, CachelineEfVec>>::new_random(n, params2);
+            // benchmark_queries::<1, _, _, _, _, _>(total, &keys, &pt);
+            // // benchmark_queries::<32, _, _, _, _, _>(total, &keys, &pt);
         }
         params @ Command::BucketFn { threads, n, .. } => {
             rayon::ThreadPoolBuilder::new()
@@ -236,14 +239,16 @@ fn main() -> anyhow::Result<()> {
                 benchmark_queries::<32, _, _, _, _, _>(total, &keys, &pt);
             }
 
-            test(&params, &keys, bucket_fn::CubicEps);
-            // test(&params, &keys, bucket_fn::Cubic);
-            test(&params, &keys, bucket_fn::SquareEps);
-            test(&params, &keys, bucket_fn::Square);
             // test(&params, &keys, bucket_fn::Skewed::new(0.6, 0.3));
+            // test(&params, &keys, bucket_fn::Skewed::new(0.8, 0.55));
+            // test(&params, &keys, bucket_fn::Cubic);
+            test(&params, &keys, bucket_fn::CubicEps);
+            // test(&params, &keys, bucket_fn::QuarticEps);
+            // test(&params, &keys, bucket_fn::SquareEps);
+            // test(&params, &keys, bucket_fn::Square);
             // test(&params, &keys, bucket_fn::Linear);
             // test(&params, &keys, bucket_fn::Perfect { eps: 0. });
-            // test(&params, &keys, bucket_fn::Perfect { eps: 0.01 });
+            // test(&params, &keys, bucket_fn::Perfect { eps: 0.05 });
         }
     }
 
@@ -318,29 +323,53 @@ fn benchmark_queries<
     eprintln!("BENCHMARKING A={A}\t loops {loops}");
 
     if A == 1 {
-        let query = bench_index(loops, keys, |key| pt.index_minimal(key));
-        eprintln!(" ( 1  /r/ )  : {query:>5.2}ns");
         let query = bench_index(loops, keys, |key| pt.index(key));
         eprintln!(" ( 1  / / )  : {query:>5.2}ns");
+        let query = bench_index(loops, keys, |key| pt.index_minimal(key));
+        eprintln!(" ( 1  /r/ )  : {query:>5.2}ns");
+        let query = time(loops, keys, || {
+            let mut sum = 0;
+            for key in keys {
+                sum += pt.index(key);
+            }
+            sum
+        });
+        eprintln!(" ( 1  / /f)  : {query:>5.2}ns");
+        let query = time(loops, keys, || {
+            let mut sum = 0;
+            for key in keys {
+                sum += pt.index_minimal(key);
+            }
+            sum
+        });
+        eprintln!(" ( 1  /r/f)  : {query:>5.2}ns");
     }
 
-    for threads in [1, 3, 6] {
-        let query = time(loops, keys, || {
-            index_parallel::<A, _, _, _, _, _>(pt, keys, threads, true, false)
-        });
-        eprintln!(" ({A:2}t{threads}/r/s)  : {query:>5.2}ns");
+    for threads in [1] {
         // let query = time(loops, keys, || {
-        //     index_parallel::<A, _, _, _, _>(pt, keys, threads, true, true)
+        //     index_parallel::<A, _, _, _, _, _>(pt, keys, threads, true, false, false)
         // });
-        // eprintln!(" ({A}t{threads}/r/b)  : {query:>5.2}ns");
-        let query = time(loops, keys, || {
-            index_parallel::<A, _, _, _, _, _>(pt, keys, threads, false, false)
-        });
-        eprintln!(" ({A:2}t{threads}/ /s)  : {query:>5.2}ns");
+        // eprintln!(" ({A:2}t{threads}/r/s)  : {query:>5.2}ns");
         // let query = time(loops, keys, || {
-        //     index_parallel::<A, _, _, _, _>(pt, keys, threads, false, true)
+        //     index_parallel::<A, _, _, _, _, _>(pt, keys, threads, true, true, false)
+        // });
+        // eprintln!(" ({A:2}t{threads}/r/b)  : {query:>5.2}ns");
+        // let query = time(loops, keys, || {
+        //     index_parallel::<A, _, _, _, _, _>(pt, keys, threads, true, false, true)
+        // });
+        // eprintln!(" ({A:2}t{threads}/r/B)  : {query:>5.2}ns");
+        // let query = time(loops, keys, || {
+        //     index_parallel::<A, _, _, _, _, _>(pt, keys, threads, false, false, false)
+        // });
+        // eprintln!(" ({A:2}t{threads}/ /s)  : {query:>5.2}ns");
+        // let query = time(loops, keys, || {
+        //     index_parallel::<A, _, _, _, _, _>(pt, keys, threads, false, true, false)
         // });
         // eprintln!(" ({A:2}t{threads}/ /b)  : {query:>5.2}ns");
+        // let query = time(loops, keys, || {
+        //     index_parallel::<A, _, _, _, _, _>(pt, keys, threads, false, false, true)
+        // });
+        // eprintln!(" ({A:2}t{threads}/ /B)  : {query:>5.2}ns");
     }
 }
 
@@ -363,11 +392,7 @@ where
     F: Fn() -> usize,
 {
     let start = SystemTime::now();
-    let mut sum = 0;
-    for _ in 0..loops {
-        sum += f();
-    }
-    black_box(sum);
+    black_box((0..loops).map(|_| f()).sum::<usize>());
     start.elapsed().unwrap().as_nanos() as f32 / (loops * keys.len()) as f32
 }
 
@@ -385,6 +410,7 @@ fn index_parallel<
     threads: usize,
     minimal: bool,
     batch: bool,
+    batch2: bool,
 ) -> usize {
     let chunk_size = xs.len().div_ceil(threads);
     let sum = AtomicUsize::new(0);
@@ -402,6 +428,14 @@ fn index_parallel<
                             .sum::<usize>()
                     } else {
                         pt.index_batch_exact::<A, false>(&xs[start_idx..end])
+                            .sum::<usize>()
+                    }
+                } else if batch2 {
+                    if minimal {
+                        pt.index_batch_exact2::<A, true>(&xs[start_idx..end])
+                            .sum::<usize>()
+                    } else {
+                        pt.index_batch_exact2::<A, false>(&xs[start_idx..end])
                             .sum::<usize>()
                     }
                 } else {
