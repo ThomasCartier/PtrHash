@@ -623,11 +623,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         &'a self,
         keys: impl IntoIterator<Item = &'a Key> + 'a,
     ) -> impl Iterator<Item = usize> + 'a {
-        // Append B values at the end of the iterator to make sure we wrap sufficiently.
-        let mut hashes = keys
-            .into_iter()
-            .map(|x| self.hash_key(x))
-            .chain([Default::default(); B]);
+        let mut keys = keys.into_iter();
 
         // Ring buffers to cache the hash and bucket of upcoming queries.
         let mut next_hashes: [Hx::H; B] = [Hx::H::default(); B];
@@ -635,30 +631,104 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 
         // Initialize and prefetch first B values.
         for idx in 0..B {
-            next_hashes[idx] = hashes.next().unwrap();
+            let hx = self.hash_key(keys.next().unwrap());
+            next_hashes[idx] = hx;
             next_buckets[idx] = self.bucket(next_hashes[idx]);
             crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
         }
-        hashes.enumerate().map(
-            // This is needed to ensure inlining when remapping is true.
-            #[inline(always)]
-            move |(idx, next_hash)| {
-                let idx = idx % B;
-                let cur_hash = next_hashes[idx];
-                let cur_bucket = next_buckets[idx];
-                next_hashes[idx] = next_hash;
-                next_buckets[idx] = self.bucket(next_hashes[idx]);
-                crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
-                let pilot = self.pilots.as_ref().index(cur_bucket);
-                let slot = self.slot(cur_hash, pilot);
 
-                if MINIMAL && slot >= self.n {
-                    self.remap.index(slot - self.n) as usize
-                } else {
-                    slot
+        // Manual iterator implementation so we avoid the overhead and non-inlining of Chain.
+        struct It<
+            'a,
+            const B: usize,
+            const MINIMAL: bool,
+            Key: KeyT,
+            KeyIt: Iterator<Item = &'a Key> + 'a,
+            BF: BucketFn,
+            F: Packed,
+            Hx: Hasher<Key>,
+            V: AsRef<[u8]>,
+        > {
+            ph: &'a PtrHash<Key, BF, F, Hx, V>,
+            keys: KeyIt,
+            next_hashes: [Hx::H; B],
+            next_buckets: [usize; B],
+        }
+
+        impl<
+                'a,
+                const B: usize,
+                const MINIMAL: bool,
+                Key: KeyT,
+                KeyIt: Iterator<Item = &'a Key> + 'a,
+                BF: BucketFn,
+                F: Packed,
+                Hx: Hasher<Key>,
+                V: AsRef<[u8]>,
+            > Iterator for It<'a, B, MINIMAL, Key, KeyIt, BF, F, Hx, V>
+        {
+            type Item = usize;
+            #[inline(always)]
+            fn next(&mut self) -> Option<usize> {
+                todo!();
+            }
+
+            #[inline(always)]
+            fn fold<BB, FF>(mut self, init: BB, mut f: FF) -> BB
+            where
+                Self: Sized,
+                FF: FnMut(BB, Self::Item) -> BB,
+            {
+                let mut accum = init;
+                let mut i = 0;
+
+                for key in self.keys {
+                    let next_hash = self.ph.hash_key(key);
+                    let idx = i % B;
+                    let cur_hash = self.next_hashes[idx];
+                    let cur_bucket = self.next_buckets[idx];
+                    self.next_hashes[idx] = next_hash;
+                    self.next_buckets[idx] = self.ph.bucket(self.next_hashes[idx]);
+                    crate::util::prefetch_index(self.ph.pilots.as_ref(), self.next_buckets[idx]);
+                    let pilot = self.ph.pilots.as_ref().index(cur_bucket);
+                    let slot = self.ph.slot(cur_hash, pilot);
+
+                    let slot = if MINIMAL && slot >= self.ph.n {
+                        self.ph.remap.index(slot - self.ph.n) as usize
+                    } else {
+                        slot
+                    };
+
+                    accum = f(accum, slot);
+                    i += 1;
                 }
-            },
-        )
+
+                for _ in 0..B {
+                    let idx = i % B;
+                    let cur_hash = self.next_hashes[idx];
+                    let cur_bucket = self.next_buckets[idx];
+                    let pilot = self.ph.pilots.as_ref().index(cur_bucket);
+                    let slot = self.ph.slot(cur_hash, pilot);
+
+                    let slot = if MINIMAL && slot >= self.ph.n {
+                        self.ph.remap.index(slot - self.ph.n) as usize
+                    } else {
+                        slot
+                    };
+
+                    accum = f(accum, slot);
+                    i += 1;
+                }
+
+                accum
+            }
+        }
+        It::<B, MINIMAL, _, _, _, _, _, _> {
+            ph: self,
+            keys,
+            next_hashes,
+            next_buckets,
+        }
     }
 
     /// Takes an iterator over keys and returns an iterator over the indices of the keys.
