@@ -674,25 +674,34 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         let mut buckets: [usize; K] = [0; K];
 
         // Work on chunks of size K.
-        let mut f = move |hx: [Hx::H; K]| {
-            // Prefetch.
-            for idx in 0..K {
-                buckets[idx] = self.bucket(hx[idx]);
-                crate::util::prefetch_index(self.pilots.as_ref(), buckets[idx]);
-            }
-            // Query.
-            (0..K).map(move |idx| {
-                let pilot = self.pilots.as_ref().index(buckets[idx]);
-                let slot = self.slot(hx[idx], pilot);
-                if MINIMAL && slot >= self.n {
-                    self.remap.index(slot - self.n) as usize
-                } else {
-                    slot
+        let mut f = {
+            #[inline(always)]
+            move |hx: [Hx::H; K]| {
+                // Prefetch.
+                for idx in 0..K {
+                    buckets[idx] = self.bucket(hx[idx]);
+                    crate::util::prefetch_index(self.pilots.as_ref(), buckets[idx]);
                 }
-            })
+                // Query.
+                (0..K).map(
+                    #[inline(always)]
+                    move |idx| {
+                        let pilot = self.pilots.as_ref().index(buckets[idx]);
+                        let slot = self.slot(hx[idx], pilot);
+                        if MINIMAL && slot >= self.n {
+                            self.remap.index(slot - self.n) as usize
+                        } else {
+                            slot
+                        }
+                    },
+                )
+            }
         };
         let array_chunks = xs.into_iter().map(|x| self.hash_key(x)).array_chunks::<K>();
-        array_chunks.into_iter().flat_map(move |chunk| f(chunk))
+        array_chunks.into_iter().flat_map(
+            #[inline(always)]
+            move |chunk| f(chunk),
+        )
         // .chain(f(&array_chunks
         //     .into_remainder()
         //     .unwrap_or_default()
