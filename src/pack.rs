@@ -125,7 +125,6 @@ impl MutPacked for EliasFano {
 }
 
 impl Packed for EliasFano {
-    #[inline(always)]
     fn index(&self, index: usize) -> u64 {
         self.0.select(index as _).unwrap() as u64
     }
