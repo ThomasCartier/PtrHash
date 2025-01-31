@@ -778,6 +778,49 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         //     .into_iter()))
     }
 
+    #[inline]
+    pub fn index_batch_exact2<'a, const K: usize, const MINIMAL: bool>(
+        &'a self,
+        xs: impl IntoIterator<Item = &'a Key, IntoIter: ExactSizeIterator> + 'a,
+    ) -> impl Iterator<Item = usize> + 'a {
+        let mut buckets: [usize; K] = [0; K];
+        let mut hs: [Hx::H; K] = [Hx::H::default(); K];
+
+        let mut xs = xs
+            .into_iter()
+            .map(|x| self.hash_key(x))
+            .chain([Default::default(); K]);
+        for i in 0..K {
+            hs[i] = xs.next().unwrap();
+        }
+        let mut idx = K;
+        xs.map(move |hx| {
+            if idx == K {
+                idx = 0;
+                // Prefetch.
+                for idx in 0..K {
+                    buckets[idx] = self.bucket(hs[idx]);
+                    crate::util::prefetch_index(self.pilots.as_ref(), buckets[idx]);
+                }
+            }
+
+            // Query.
+            let pilot = self.pilots.as_ref().index(buckets[idx]);
+            let slot = self.slot(hs[idx], pilot);
+
+            // Update hash in current pos and increment.
+            hs[idx] = hx;
+            idx += 1;
+
+            // Remap?
+            if MINIMAL && slot >= self.n {
+                self.remap.index(slot - self.n) as usize
+            } else {
+                slot
+            }
+        })
+    }
+
     fn hash_key(&self, x: &Key) -> Hx::H {
         Hx::hash(x, self.seed)
     }
