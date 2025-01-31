@@ -778,6 +778,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         //     .into_iter()))
     }
 
+    /// A variant of index_batch_exact that scales better with K.
+    /// Somehow the version above has pretty constant speed regardless of K.
     #[inline]
     pub fn index_batch_exact2<'a, const K: usize, const MINIMAL: bool>(
         &'a self,

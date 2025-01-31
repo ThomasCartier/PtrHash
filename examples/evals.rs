@@ -19,16 +19,23 @@ use serde::Serialize;
 /// 2. construction speed, datastructure size, and query throughput for various parameters
 /// 3. remap types
 fn main() {
-    // bucket_fn_stats();
-    // size();
-    // remap();
-    // query_batching();
-    // Above here: ~3h
-    // query_throughput(); // 5min
-    // TODO
-    // TODO
-    sharding(Sharding::Hybrid(1 << 37), "data/sharding_hybrid.json");
-    sharding(Sharding::Memory, "data/sharding_memory.json");
+    // 4.1.1
+    // bucket_fn_stats(); // <10min
+
+    // 4.1.2
+    // size(); // many hours
+
+    // 4.1.3
+    // remap(); // 12min
+
+    // 4.1.4
+    // sharding(Sharding::Hybrid(1 << 37), "data/sharding_hybrid.json"); // 55min
+    // sharding(Sharding::Memory, "data/sharding_memory.json"); // 1h
+
+    // 4.2.1
+    // query_batching(); // 40min
+    // 4.2.2
+    // query_throughput(); // 12min
 }
 
 const SMALL_N: usize = 20_000_000;
@@ -74,6 +81,8 @@ struct Result {
     total: f64,
     q1_phf: f64,
     q1_mphf: f64,
+    q1_phf_bb: f64,
+    q1_mphf_bb: f64,
     q32_phf: f64,
     q32_mphf: f64,
 }
@@ -254,7 +263,23 @@ fn remap() {
         let q1_mphf = time_query_f(keys, || {
             let mut sum = 0;
             for key in keys {
+                sum += ph.index_minimal(key);
+            }
+            sum
+        });
+        let q1_phf_bb = time_query_f(keys, || {
+            let mut sum = 0;
+            for key in keys {
+                black_box(());
                 sum += ph.index(key);
+            }
+            sum
+        });
+        let q1_mphf_bb = time_query_f(keys, || {
+            let mut sum = 0;
+            for key in keys {
+                black_box(());
+                sum += ph.index_minimal(key);
             }
             sum
         });
@@ -276,20 +301,22 @@ fn remap() {
             total,
             q1_phf,
             q1_mphf,
+            q1_phf_bb,
+            q1_mphf_bb,
             q32_phf,
             q32_mphf,
         }
     }
 
-    let mut results = vec![];
     let n = LARGE_N;
+    let mut results = vec![];
     let keys = &generate_keys(n);
 
     {
-        let alpha = 0.995;
+        let alpha = 0.99;
         let lambda = 3.0;
         results.push(test::<Vec<u32>>(keys, alpha, lambda, Linear));
-        // results.push(test::<CachelineEfVec>(keys, alpha, lambda, Linear));
+        results.push(test::<CachelineEfVec>(keys, alpha, lambda, Linear));
         results.push(test::<EliasFano>(keys, alpha, lambda, Linear));
     }
     {
@@ -299,7 +326,7 @@ fn remap() {
         results.push(test::<CachelineEfVec>(keys, alpha, lambda, CubicEps));
         results.push(test::<EliasFano>(keys, alpha, lambda, CubicEps));
     }
-    write(&results, "data/remap.json");
+    write(&results, &format!("data/remap.json"));
 }
 
 fn sharding(sharding: Sharding, path: &str) {
@@ -380,6 +407,23 @@ fn query_batching() {
             ..r0.clone()
         };
         eprintln!("Result: {r:?}");
+
+        let q_phf = time_query_f(keys, || {
+            let mut sum = 0;
+            for key in keys {
+                black_box(());
+                sum += ph.index(key);
+            }
+            sum
+        });
+
+        let r = QueryResult {
+            batch_size: 0,
+            mode: "loop_bb".to_string(),
+            q_phf,
+            ..r0.clone()
+        };
+        eprintln!("Result: {r:?}");
         rs.push(r.clone());
 
         fn batch<const A: usize, BF: BucketFn>(
@@ -389,7 +433,9 @@ fn query_batching() {
             rs: &mut Vec<QueryResult>,
         ) {
             let stream = time_query(keys, || ph.index_stream::<A, false>(keys));
-            let batch = time_query(keys, || ph.index_batch_exact::<A, false>(keys));
+            // Somehow, index_batch has very weird scaling behaviour in A.
+            // index_batch2 *does* improve as A increases, and so we use that one instead.
+            // let batch = time_query(keys, || ph.index_batch_exact::<A, false>(keys));
             let batch2 = time_query(keys, || ph.index_batch_exact2::<A, false>(keys));
             rs.push(QueryResult {
                 batch_size: A,
@@ -398,13 +444,13 @@ fn query_batching() {
                 ..r.clone()
             });
             eprintln!("Result: {:?}", rs.last().unwrap());
-            rs.push(QueryResult {
-                batch_size: A,
-                mode: "batch".to_string(),
-                q_phf: batch,
-                ..r.clone()
-            });
-            eprintln!("Result: {:?}", rs.last().unwrap());
+            // rs.push(QueryResult {
+            //     batch_size: A,
+            //     mode: "batch".to_string(),
+            //     q_phf: batch,
+            //     ..r.clone()
+            // });
+            // eprintln!("Result: {:?}", rs.last().unwrap());
             rs.push(QueryResult {
                 batch_size: A,
                 mode: "batch2".to_string(),
@@ -414,35 +460,35 @@ fn query_batching() {
             eprintln!("Result: {:?}", rs.last().unwrap());
         }
         batch::<1, _>(&ph, keys, &r, rs);
-        // batch::<2, _>(&ph, keys, &r, rs);
-        // batch::<3, _>(&ph, keys, &r, rs);
-        // batch::<4, _>(&ph, keys, &r, rs);
-        // batch::<5, _>(&ph, keys, &r, rs);
-        // batch::<6, _>(&ph, keys, &r, rs);
-        // batch::<7, _>(&ph, keys, &r, rs);
-        // batch::<8, _>(&ph, keys, &r, rs);
-        // batch::<10, _>(&ph, keys, &r, rs);
-        // batch::<12, _>(&ph, keys, &r, rs);
-        // batch::<14, _>(&ph, keys, &r, rs);
-        // batch::<16, _>(&ph, keys, &r, rs);
-        // batch::<20, _>(&ph, keys, &r, rs);
-        // batch::<24, _>(&ph, keys, &r, rs);
-        // batch::<28, _>(&ph, keys, &r, rs);
-        // batch::<32, _>(&ph, keys, &r, rs);
-        // batch::<40, _>(&ph, keys, &r, rs);
-        // batch::<48, _>(&ph, keys, &r, rs);
-        // batch::<56, _>(&ph, keys, &r, rs);
-        // batch::<64, _>(&ph, keys, &r, rs);
+        batch::<2, _>(&ph, keys, &r, rs);
+        batch::<3, _>(&ph, keys, &r, rs);
+        batch::<4, _>(&ph, keys, &r, rs);
+        batch::<5, _>(&ph, keys, &r, rs);
+        batch::<6, _>(&ph, keys, &r, rs);
+        batch::<7, _>(&ph, keys, &r, rs);
+        batch::<8, _>(&ph, keys, &r, rs);
+        batch::<10, _>(&ph, keys, &r, rs);
+        batch::<12, _>(&ph, keys, &r, rs);
+        batch::<14, _>(&ph, keys, &r, rs);
+        batch::<16, _>(&ph, keys, &r, rs);
+        batch::<20, _>(&ph, keys, &r, rs);
+        batch::<24, _>(&ph, keys, &r, rs);
+        batch::<28, _>(&ph, keys, &r, rs);
+        batch::<32, _>(&ph, keys, &r, rs);
+        batch::<40, _>(&ph, keys, &r, rs);
+        batch::<48, _>(&ph, keys, &r, rs);
+        batch::<56, _>(&ph, keys, &r, rs);
+        batch::<64, _>(&ph, keys, &r, rs);
     }
 
     let mut results = vec![];
-    for n in [SMALL_N] {
+    for n in [SMALL_N, LARGE_N] {
         let keys = &generate_keys(n);
 
-        // test(keys, PARAMS_SIMPLE, &mut results);
+        test(keys, PARAMS_SIMPLE, &mut results);
         test(keys, PARAMS_COMPACT, &mut results);
     }
-    // write(&results, "data/query_batching.json");
+    write(&results, "data/query_batching.json");
 }
 
 fn time_query<I: Iterator<Item = usize>>(keys: &[u64], f: impl Fn() -> I) -> f64 {
@@ -529,7 +575,34 @@ fn query_throughput() {
         // When n is small, queries perfectly scale to >1 threads anyway.
         let max_threads = 6;
         for threads in 1..=max_threads {
-            // // NOTE: Instea
+            let q_phf = time_query_parallel_f(threads, keys, |keys| {
+                let mut sum = 0;
+                for key in keys {
+                    black_box(());
+                    sum += ph.index(key);
+                }
+                sum
+            });
+            let q_mphf = time_query_parallel_f(threads, keys, |keys| {
+                let mut sum = 0;
+                for key in keys {
+                    black_box(());
+                    sum += ph.index_minimal(key);
+                }
+                sum
+            });
+
+            let r = QueryResult {
+                batch_size: 0,
+                mode: "loop_bb".to_string(),
+                q_phf,
+                q_mphf,
+                threads,
+                ..r0.clone()
+            };
+            eprintln!("Result: {r:?}");
+            rs.push(r.clone());
+
             let q_phf = time_query_parallel_f(threads, keys, |keys| {
                 let mut sum = 0;
                 for key in keys {
