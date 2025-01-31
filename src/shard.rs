@@ -135,6 +135,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                 let shard_range = first_shard..(first_shard + shards_on_disk).min(self.shards);
                 eprintln!("Writing keys for shards {shard_range:?}/{}", self.shards);
 
+                let start = std::time::Instant::now();
+
                 // Create a file writer and count for each shard.
                 let writers = shard_range
                     .clone()
@@ -164,10 +166,9 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                             bufs[shard - shard_range.start].push(h);
                         }
                     });
+                let start = log_duration("Writing files", start);
 
-                eprintln!("Wrote all files.");
-
-                // Convert writers to files.
+                // Flush writers and convert to files.
                 let files = writers
                     .into_iter()
                     .map(|w| {
@@ -178,17 +179,20 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                         (file, cnt)
                     })
                     .collect_vec();
+                log_duration("Flushing writers", start);
 
                 files
                     .into_iter()
                     .zip(shard_range)
                     .map(move |((f, cnt), shard)| {
+                        let start = std::time::Instant::now();
                         let mut v = vec![Hx::H::default(); cnt];
                         let mut reader = BufReader::new(f);
                         let (pre, data, post) = unsafe { v.align_to_mut::<u8>() };
                         assert!(pre.is_empty());
                         assert!(post.is_empty());
                         reader.read_exact(data).unwrap();
+                        log_duration("Read shard", start);
                         eprintln!("Read {shard:>3}/{:3}: {} keys", self.shards, cnt);
                         v
                     })
@@ -207,14 +211,14 @@ struct ThreadLocalBuf<'a, H> {
 impl<'a, H> ThreadLocalBuf<'a, H> {
     fn new(file: &'a Mutex<(BufWriter<File>, usize)>) -> Self {
         Self {
-            buf: Vec::with_capacity(1 << 16),
+            // buffer 1GB of data at a time.
+            buf: Vec::with_capacity(1 << 28),
             file,
         }
     }
     fn push(&mut self, h: H) {
         self.buf.push(h);
-        // L2 size
-        if self.buf.len() == (1 << 16) {
+        if self.buf.len() == self.buf.capacity() {
             self.flush();
         }
     }
