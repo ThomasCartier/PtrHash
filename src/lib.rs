@@ -57,6 +57,7 @@ mod test;
 use bitvec::{bitvec, vec::BitVec};
 use bucket_fn::BucketFn;
 use bucket_fn::CubicEps;
+use bucket_fn::Linear;
 use cacheline_ef::CachelineEfVec;
 use itertools::izip;
 use itertools::Itertools;
@@ -86,9 +87,9 @@ pub struct PtrHashParams<BF> {
     pub lambda: f64,
     /// Bucket function
     pub bucket_fn: BF,
-    /// #slots/part will be the largest power of 2 not larger than this.
-    /// Default is 2^20.
-    pub slots_per_part: usize,
+    /// If given, #slots/part will be the smallest power of 2 at least this.
+    /// By default, it is computed as the smallest power of 2 for which construction is likely to succeed.
+    pub slots_per_part: Option<usize>,
     /// Upper bound on number of keys per shard.
     /// Default is 2^32, or 32GB of hashes per shard.
     pub keys_per_shard: usize,
@@ -282,25 +283,73 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     fn init(n: usize, mut params: PtrHashParams<BF>) -> Self {
         assert!(n > 1, "Things break if n=1.");
         assert!(n < (1 << 40), "Number of keys must be less than 2^40.");
-        assert!(
-            params.slots_per_part <= u32::MAX as _,
-            "Each part must have <2^32 slots"
-        );
-
         let shards = match params.sharding {
             Sharding::None => 1,
             _ => n.div_ceil(params.keys_per_shard),
         };
+        eprintln!("#shards: {}", shards);
         let keys_per_shard = n.div_ceil(shards);
+        eprintln!("keys/shard: {}", keys_per_shard);
 
-        let slots_per_part = 1 << params.slots_per_part.ilog2();
-        let keys_per_part = (params.alpha * slots_per_part as f64) as usize;
-        let parts_per_shard = keys_per_shard.div_ceil(keys_per_part);
-        let buckets_per_part = (keys_per_part as f64 / params.lambda).ceil() as usize;
+        // Compute the optimal number of slots per part.
+        // - Smaller parts have better cache locality and hence faster construction.
+        // - Larger parts have more uniform sizes, and hence fewer outliers with load factor close to 1.
+        // We use the smallest power of 2 for which the probability that the
+        // largest part has load factor <1 is large enough.
+        let mut slots_per_part = params.slots_per_part.map_or(2, |s| s.next_power_of_two());
+        assert!(
+            slots_per_part <= u32::MAX as _,
+            "Each part must have <2^32 slots"
+        );
 
-        let parts = shards * parts_per_shard;
-        let buckets_total = parts * buckets_per_part;
-        let slots_total = parts * slots_per_part;
+        let mut keys_per_part;
+        let mut parts_per_shard;
+        let mut buckets_per_part;
+
+        let mut parts;
+        let mut buckets_total;
+        let mut slots_total;
+
+        loop {
+            keys_per_part = (params.alpha * slots_per_part as f64) as usize;
+            parts_per_shard = keys_per_shard.div_ceil(keys_per_part);
+            buckets_per_part = (keys_per_part as f64 / params.lambda).ceil() as usize;
+
+            parts = shards * parts_per_shard;
+            buckets_total = parts * buckets_per_part;
+            slots_total = parts * slots_per_part;
+
+            // Test if the probability of success is large enough.
+            let exp_keys_per_part = n as f64 / parts as f64;
+            let stddev = exp_keys_per_part.sqrt();
+            // Expected size of largest part:
+            // https://math.stackexchange.com/a/89147/91741:
+            let stddevs_away = ((parts as f64).ln() * 2.).sqrt();
+            let exp_max = exp_keys_per_part + stddev * stddevs_away;
+            // Add a buffer of 1.5 stddev.
+            let buf_max = exp_max + 1.5 * stddev;
+
+            if buf_max < slots_per_part as f64 {
+                eprintln!("Using slots per part: {slots_per_part}, expected keys {}, expected max keys: {} ({stddevs_away} σ)", exp_keys_per_part as usize, exp_max as usize);
+                break;
+            }
+
+            // If slots_per_part was explicitly given, always use it.
+            if params.slots_per_part.is_some() {
+                eprintln!("Using user provided slots per part of {slots_per_part}, but it is likely too small for construction to succeed.");
+                eprintln!(
+                    "The largest part is expected to have around {} keys.",
+                    exp_max as usize
+                );
+                break;
+            }
+
+            slots_per_part *= 2;
+            assert!(
+                slots_per_part <= u32::MAX as _,
+                "Each part must have <2^32 slots"
+            );
+        }
 
         if params.print_stats {
             eprintln!("        keys: {n:>10}");
@@ -489,6 +538,10 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     /// index() always returns below this bound.
     pub fn max_index(&self) -> usize {
         self.slots_total
+    }
+
+    pub fn slots_per_part(&self) -> usize {
+        self.slots
     }
 
     /// Get a non-minimal index of the given key.
