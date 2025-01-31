@@ -101,20 +101,40 @@ pub struct PtrHashParams<BF> {
     pub print_stats: bool,
 }
 
-/// Default parameter values should provide reasonably fast construction for all n up to 2^32:
-/// - `alpha=0.98`
-/// - `c=9.0`
-/// - `slots_per_part=2^20~10^6`
+impl PtrHashParams<Linear> {
+    /// Default 'fast' parameters:
+    /// - `alpha=0.99`
+    /// - `lambda=3.0`
+    /// - `bucket_fn=Linear`
+    pub fn default_linear() -> Self {
+        Self {
+            remap: true,
+            alpha: 0.99,
+            lambda: 3.0,
+            bucket_fn: Linear,
+            slots_per_part: None,
+            // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^31=16GB.
+            keys_per_shard: 1 << 31,
+            sharding: Sharding::None,
+            print_stats: false,
+        }
+    }
+}
+
 impl Default for PtrHashParams<CubicEps> {
+    /// Default 'compact' parameters:
+    /// - `alpha=0.99`
+    /// - `lambda=4.0`
+    /// - `bucket_fn=CubicEps`
     fn default() -> Self {
         Self {
             remap: true,
-            alpha: 0.98,
-            lambda: 3.5,
+            alpha: 0.99,
+            lambda: 4.0,
             bucket_fn: CubicEps,
-            slots_per_part: 1 << 20,
-            // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^32=32GB.
-            keys_per_shard: 1 << 32,
+            slots_per_part: None,
+            // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^31=16GB.
+            keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
         }
