@@ -41,6 +41,7 @@ fn main() {
 
 const SMALL_N: usize = 20_000_000;
 const LARGE_N: usize = 1_000_000_000;
+const NUM_QUERIES: usize = 1_00_000_000;
 
 const PARAMS_SIMPLE: PtrHashParams<Linear> = PtrHashParams {
     alpha: 0.99,
@@ -252,8 +253,6 @@ fn remap() {
         let total = pilots + remap;
 
         // Single threaded query throughput, non-minimal and minimal.
-        // Query all keys 'loops' times.
-        let loops = 1_000_000_000 / keys.len();
         let q1_phf = time_query_f(keys, || {
             let mut sum = 0;
             for key in keys {
@@ -493,13 +492,15 @@ fn query_batching() {
     write(&results, "data/query_batching.json");
 }
 
-fn time_query<I: Iterator<Item = usize>>(keys: &[u64], f: impl Fn() -> I) -> f64 {
+fn time_query<K: KeyT, I: Iterator<Item = usize>>(keys: &[K], f: impl Fn() -> I) -> f64 {
     time_query_f(keys, || f().sum::<usize>())
 }
 
-fn time_query_f(keys: &[u64], f: impl Fn() -> usize) -> f64 {
-    let loops = 1_000_000_000 / keys.len();
-    time(|| black_box((0..loops).map(|_| f()).sum::<usize>())).1
+fn time_query_f<K: KeyT>(keys: &[K], f: impl Fn() -> usize) -> f64 {
+    let loops = NUM_QUERIES / keys.len();
+    let t = time(|| black_box((0..loops).map(|_| f()).sum::<usize>())).1;
+    // convert to ns/key
+    t * 1_000_000_000. / (loops * keys.len()) as f64
 }
 
 fn time_query_parallel<'k, I: Iterator<Item = usize>>(
@@ -520,10 +521,10 @@ fn time_query_parallel_f<'k>(
     keys: &'k Vec<u64>,
     f: impl Fn(&'k [u64]) -> usize + Send + Sync,
 ) -> f64 {
-    let loops = 1_000_000_000 / keys.len();
+    let loops = NUM_QUERIES / keys.len();
     let chunk_size = keys.len().div_ceil(threads);
 
-    time(move || {
+    let t = time(move || {
         rayon::scope(|scope| {
             for thread_idx in 0..threads {
                 let f = &f;
@@ -541,7 +542,9 @@ fn time_query_parallel_f<'k>(
             }
         });
     })
-    .1
+    .1;
+    // convert to ns/key
+    t * 1_000_000_000. / (loops * keys.len()) as f64
 }
 
 fn query_throughput() {
@@ -571,8 +574,6 @@ fn query_throughput() {
             remap_type: R::name(),
             ..Default::default()
         };
-
-        let loops = 1_000_000_000 / keys.len();
 
         // When n is small, queries perfectly scale to >1 threads anyway.
         let max_threads = 6;
