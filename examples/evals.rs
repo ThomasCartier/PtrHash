@@ -1,4 +1,5 @@
 #![feature(type_changing_struct_update, try_blocks, slice_as_array)]
+
 use std::{cmp::min, collections::HashMap, hint::black_box, time::Instant};
 
 use cacheline_ef::CachelineEfVec;
@@ -39,7 +40,7 @@ fn main() {
     // query_throughput(); // 12min
 
     // 4.?.?
-    string_queries();
+    string_queries(); // 4min
 }
 
 #[allow(unused)]
@@ -707,14 +708,6 @@ fn string_queries() {
             ..Default::default()
         };
 
-        let q_phf = time_query_f(keys, || {
-            let mut sum = 0;
-            for key in keys {
-                black_box(());
-                sum += ph.index(key);
-            }
-            sum
-        });
         let q_mphf = time_query_f(keys, || {
             let mut sum = 0;
             for key in keys {
@@ -727,20 +720,12 @@ fn string_queries() {
         let r = QueryResult {
             batch_size: 0,
             mode: "loop_bb".to_string(),
-            q_phf,
             q_mphf,
             ..r0.clone()
         };
         eprintln!("Result: {r:?}");
         rs.push(r.clone());
 
-        let q_phf = time_query_f(keys, || {
-            let mut sum = 0;
-            for key in keys {
-                sum += ph.index(key);
-            }
-            sum
-        });
         let q_mphf = time_query_f(keys, || {
             let mut sum = 0;
             for key in keys {
@@ -752,7 +737,6 @@ fn string_queries() {
         let r = QueryResult {
             batch_size: 0,
             mode: "loop".to_string(),
-            q_phf,
             q_mphf,
             ..r0.clone()
         };
@@ -760,13 +744,11 @@ fn string_queries() {
         rs.push(r.clone());
 
         const A: usize = 32;
-        let stream_phf = time_query(keys, || ph.index_stream::<A, false, _>(keys));
         let stream_mphf = time_query(keys, || ph.index_stream::<A, true, _>(keys));
 
         rs.push(QueryResult {
             batch_size: A,
             mode: "stream".to_string(),
-            q_phf: stream_phf,
             q_mphf: stream_mphf,
             ..r.clone()
         });
@@ -774,13 +756,15 @@ fn string_queries() {
     }
 
     let mut results = vec![];
-    for n in [100_000_000 /*SMALL_N, LARGE_N*/] {
+    // We can't fit 1G strings into memory, sadly.
+    for n in [100_000_000] {
         // INT
         {
             let keys: Vec<u64> = generate_keys(n);
 
             test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, FxHash>(&keys, PARAMS_COMPACT, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
         }
 
         // BOXED INT
@@ -788,7 +772,52 @@ fn string_queries() {
             let keys: Vec<Box<u64>> = generate_keys(n).into_iter().map(|k| Box::new(k)).collect();
 
             test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, FxHash>(&keys, PARAMS_COMPACT, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
+        }
+
+        // PACKED SHORT STRING
+        {
+            let total_len = 10 * n + 50;
+            let mut rng = thread_rng();
+            let mut string = vec![0; total_len];
+            rng.fill_bytes(&mut string);
+            eprintln!("String size: {total_len}");
+            let mut idx = 0;
+            let keys: Vec<&[u8; 10]> = (0..n)
+                .map(|_| {
+                    let slice = string[idx..idx + 10].as_array().unwrap();
+                    idx += 10;
+                    slice
+                })
+                .collect::<Vec<_>>();
+            eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
+
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
+        }
+
+        // PACKED LONG STRING
+        {
+            let total_len = 10 * n + 50;
+            let mut rng = thread_rng();
+            let mut string = vec![0; total_len];
+            rng.fill_bytes(&mut string);
+            eprintln!("String size: {total_len}");
+            let mut idx = 0;
+            let keys: Vec<&[u8; 50]> = (0..n)
+                .map(|_| {
+                    let slice = string[idx..idx + 50].as_array().unwrap();
+                    idx += 10;
+                    slice
+                })
+                .collect::<Vec<_>>();
+            eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
+
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
         }
 
         // PACKED RANDOM STRING
@@ -809,66 +838,18 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
             test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, Xx64>(&keys, PARAMS_COMPACT, &mut results);
             test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, Xx128>(&keys, PARAMS_COMPACT, &mut results);
-        }
-
-        // PACKED SHORT STRING
-        {
-            let total_len = 10 * n + 50;
-            let mut rng = thread_rng();
-            let mut string = vec![0; total_len];
-            rng.fill_bytes(&mut string);
-            eprintln!("String size: {total_len}");
-            let mut idx = 0;
-            let keys: Vec<&[u8; 10]> = (0..n)
-                .map(|_| {
-                    let slice = string[idx..idx + 10].as_array().unwrap();
-                    idx += 10;
-                    slice
-                })
-                .collect::<Vec<_>>();
-            eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
-
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, Xx64>(&keys, PARAMS_COMPACT, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, Xx128>(&keys, PARAMS_COMPACT, &mut results);
-        }
-
-        // PACKED LONG STRING
-        {
-            let total_len = 10 * n + 50;
-            let mut rng = thread_rng();
-            let mut string = vec![0; total_len];
-            rng.fill_bytes(&mut string);
-            eprintln!("String size: {total_len}");
-            let mut idx = 0;
-            let keys: Vec<&[u8; 50]> = (0..n)
-                .map(|_| {
-                    let slice = string[idx..idx + 50].as_array().unwrap();
-                    idx += 10;
-                    slice
-                })
-                .collect::<Vec<_>>();
-            eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
-
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, Xx64>(&keys, PARAMS_COMPACT, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, Xx128>(&keys, PARAMS_COMPACT, &mut results);
         }
 
         // STRING
         {
             let keys: Vec<Vec<u8>> = generate_string_keys(n);
 
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
             test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, Xx64>(&keys, PARAMS_COMPACT, &mut results);
             test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<CachelineEfVec, _, Xx128>(&keys, PARAMS_COMPACT, &mut results);
         }
     }
     write(&results, "data/string_queries.json");
