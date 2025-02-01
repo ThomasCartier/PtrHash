@@ -167,8 +167,8 @@ pub type DefaultPtrHash<H, Key, BF> = PtrHash<Key, BF, CachelineEfVec, H, Vec<u8
 pub type EfPtrHash<H, Key> = PtrHash<Key, CubicEps, EliasFano, H, Vec<u8>>;
 
 /// Trait that keys must satisfy.
-pub trait KeyT: Default + Send + Sync + std::hash::Hash {}
-impl<T: Default + Send + Sync + std::hash::Hash> KeyT for T {}
+pub trait KeyT: Send + Sync + std::hash::Hash {}
+impl<T: Send + Sync + std::hash::Hash> KeyT for T {}
 
 // Some fixed algorithmic decisions.
 type Rp = FastReduce;

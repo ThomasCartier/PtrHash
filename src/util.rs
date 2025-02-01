@@ -73,6 +73,21 @@ pub fn generate_keys(n: usize) -> Vec<u64> {
     keys
 }
 
+pub fn generate_string_keys(n: usize) -> Vec<Vec<u8>> {
+    let start = Instant::now();
+    // let start = Instant::now();
+    let keys: Vec<_> = (0..n)
+        .into_par_iter()
+        .map_init(thread_rng, |rng, _| {
+            let len = rng.gen_range(10..=50);
+            (0..len).map(|_| rng.gen_range(1..=255)).collect()
+        })
+        .collect();
+    log_duration("generatekeys", start);
+    eprintln!("DONE");
+    keys
+}
+
 pub fn time<T>(mut f: impl FnMut() -> T) -> (T, f64) {
     let start = Instant::now();
     let t = f();
