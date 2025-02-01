@@ -190,7 +190,7 @@ impl<Key> Hasher<Key> for Wy64 {
 impl<Key> Hasher<Key> for Xx64 {
     type H = u64;
     fn hash(x: &Key, seed: u64) -> u64 {
-        xxhash_rust::xxh64::xxh64(to_bytes(x), seed)
+        xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(x), seed)
     }
 }
 impl<Key> Hasher<Key> for Xx128 {
