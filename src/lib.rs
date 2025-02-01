@@ -59,9 +59,9 @@ mod test;
 
 use bitvec::{bitvec, vec::BitVec};
 use bucket_fn::BucketFn;
-use bucket_fn::CubicEps;
-use bucket_fn::Linear;
-use cacheline_ef::CachelineEfVec;
+pub use bucket_fn::CubicEps;
+pub use bucket_fn::Linear;
+pub use cacheline_ef::CachelineEfVec;
 use itertools::izip;
 use itertools::Itertools;
 use mem_dbg::MemSize;
