@@ -120,7 +120,7 @@ fn bucket_fn_stats() {
             lambda,
             bucket_fn,
             alpha: 0.99,
-            ..PtrHashParams::default()
+            ..PtrHashParams::default_compact()
         };
         MyPtrHash::new_with_stats(&keys, params).1
     }
@@ -165,7 +165,7 @@ fn size() {
             alpha,
             lambda,
             bucket_fn,
-            ..PtrHashParams::default()
+            ..PtrHashParams::default_compact()
         };
         eprintln!("Running {alpha} {lambda} {bucket_fn:?}");
         // Construct on 6 threads.
@@ -241,7 +241,7 @@ fn remap() {
             alpha,
             lambda,
             bucket_fn,
-            ..PtrHashParams::default()
+            ..PtrHashParams::default_compact()
         };
 
         // Construct on 6 threads.
@@ -347,7 +347,7 @@ fn sharding(sharding: Sharding, path: &str) {
             // Max 128GiB of memory at a time.
             sharding,
             bucket_fn,
-            ..PtrHashParams::default()
+            ..PtrHashParams::default_compact()
         },
     );
     let c6 = start.elapsed().as_secs_f64();

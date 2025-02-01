@@ -106,11 +106,23 @@ pub struct PtrHashParams<BF> {
 }
 
 impl PtrHashParams<Linear> {
+    pub fn default_fast() -> Self {
+        Self::default()
+    }
+}
+
+impl PtrHashParams<CubicEps> {
+    pub fn default_compact() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for PtrHashParams<Linear> {
     /// Default 'fast' parameters:
     /// - `alpha=0.99`
     /// - `lambda=3.0`
     /// - `bucket_fn=Linear`
-    pub fn default_linear() -> Self {
+    fn default() -> Self {
         Self {
             remap: true,
             alpha: 0.99,
@@ -225,6 +237,38 @@ pub struct PtrHash<
     remap: F,
     _key: PhantomData<Key>,
     _hx: PhantomData<Hx>,
+}
+
+impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> Default
+    for PtrHash<Key, BF, F, Hx, Vec<u8>>
+where
+    PtrHashParams<BF>: Default,
+{
+    fn default() -> Self {
+        PtrHash {
+            params: PtrHashParams::default(),
+
+            n: 0,
+            parts: 0,
+            shards: 0,
+            parts_per_shard: 0,
+            slots_total: 0,
+            buckets_total: 0,
+            slots: 0,
+            lg_slots: 0,
+            buckets: 0,
+            rem_shards: FastReduce::new(0),
+            rem_parts: FastReduce::new(0),
+            rem_buckets: FastReduce::new(0),
+            rem_buckets_total: FastReduce::new(0),
+            rem_slots: MulReduce::new(1),
+            seed: 0,
+            pilots: vec![],
+            remap: F::default(),
+            _key: PhantomData,
+            _hx: PhantomData,
+        }
+    }
 }
 
 /// Construction methods.

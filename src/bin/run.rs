@@ -128,7 +128,7 @@ fn main() -> anyhow::Result<()> {
                     slots_per_part: s,
                     keys_per_shard,
                     sharding,
-                    ..PtrHashParams::default_linear()
+                    ..PtrHashParams::default()
                 },
             );
 
