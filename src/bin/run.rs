@@ -269,7 +269,7 @@ fn bench_hashers<Key: KeyT, BF: BucketFn>(total: usize, params: &PtrHashParams<B
         let query = bench_index(loops, keys, |key| pt.index(key));
         eprintln!("  sequential: {query:>4.1}");
         let query = time(loops, keys, || {
-            pt.index_stream::<64, false>(keys).sum::<usize>()
+            pt.index_stream::<64, false, _>(keys).sum::<usize>()
         });
         eprintln!(" prefetch 64: {query:>5.2}ns");
     }
@@ -440,10 +440,10 @@ fn index_parallel<
                     }
                 } else {
                     if minimal {
-                        pt.index_stream::<A, true>(&xs[start_idx..end])
+                        pt.index_stream::<A, true, _>(&xs[start_idx..end])
                             .sum::<usize>()
                     } else {
-                        pt.index_stream::<A, false>(&xs[start_idx..end])
+                        pt.index_stream::<A, false, _>(&xs[start_idx..end])
                             .sum::<usize>()
                     }
                 };

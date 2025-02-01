@@ -31,7 +31,7 @@ fn index_stream() {
     for n in [2, 10, 100, 1000, 10_000, 100_000, 1_000_000] {
         let keys = generate_keys(n);
         let ptr_hash = <PtrHash>::new(&keys, Default::default());
-        let sum = ptr_hash.index_stream::<32, true>(&keys).sum::<usize>();
+        let sum = ptr_hash.index_stream::<32, true, _>(&keys).sum::<usize>();
         assert_eq!(sum, (n * (n - 1)) / 2);
     }
 }

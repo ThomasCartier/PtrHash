@@ -664,9 +664,9 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     // parallel, but this is complicated, since SIMD doesn't support the
     // 64x64->128 multiplications needed in bucket/slot computations.
     #[inline]
-    pub fn index_stream<'a, const B: usize, const MINIMAL: bool>(
+    pub fn index_stream<'a, const B: usize, const MINIMAL: bool, Q: Borrow<Key> + 'a>(
         &'a self,
-        keys: impl IntoIterator<Item = &'a Key> + 'a,
+        keys: impl IntoIterator<Item = Q> + 'a,
     ) -> impl Iterator<Item = usize> + 'a {
         let mut keys = keys.into_iter();
 
@@ -676,8 +676,9 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 
         // Initialize and prefetch first B values.
         for idx in 0..B {
-            let hx = self.hash_key(keys.next().unwrap());
+            let hx = self.hash_key(keys.next().unwrap().borrow());
             next_hashes[idx] = hx;
+
             next_buckets[idx] = self.bucket(next_hashes[idx]);
             crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
         }
@@ -688,7 +689,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             const B: usize,
             const MINIMAL: bool,
             Key: KeyT,
-            KeyIt: Iterator<Item = &'a Key> + 'a,
+            Q: Borrow<Key> + 'a,
+            KeyIt: Iterator<Item = Q> + 'a,
             BF: BucketFn,
             F: Packed,
             Hx: Hasher<Key>,
@@ -705,12 +707,13 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
                 const B: usize,
                 const MINIMAL: bool,
                 Key: KeyT,
-                KeyIt: Iterator<Item = &'a Key> + 'a,
+                Q: Borrow<Key> + 'a,
+                KeyIt: Iterator<Item = Q> + 'a,
                 BF: BucketFn,
                 F: Packed,
                 Hx: Hasher<Key>,
                 V: AsRef<[u8]>,
-            > Iterator for It<'a, B, MINIMAL, Key, KeyIt, BF, F, Hx, V>
+            > Iterator for It<'a, B, MINIMAL, Key, Q, KeyIt, BF, F, Hx, V>
         {
             type Item = usize;
             #[inline(always)]
@@ -728,7 +731,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
                 let mut i = 0;
 
                 for key in self.keys {
-                    let next_hash = self.ph.hash_key(key);
+                    let next_hash = self.ph.hash_key(key.borrow());
                     let idx = i % B;
                     let cur_hash = self.next_hashes[idx];
                     let cur_bucket = self.next_buckets[idx];
@@ -768,7 +771,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
                 accum
             }
         }
-        It::<B, MINIMAL, _, _, _, _, _, _> {
+        It::<B, MINIMAL, _, _, _, _, _, _, _> {
             ph: self,
             keys,
             next_hashes,

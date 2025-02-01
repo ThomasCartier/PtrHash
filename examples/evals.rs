@@ -284,8 +284,8 @@ fn remap() {
             }
             sum
         });
-        let q32_phf = time_query(keys, || ph.index_stream::<32, false>(keys));
-        let q32_mphf = time_query(keys, || ph.index_stream::<32, true>(keys));
+        let q32_phf = time_query(keys, || ph.index_stream::<32, false, _>(keys));
+        let q32_mphf = time_query(keys, || ph.index_stream::<32, true, _>(keys));
 
         Result {
             n: keys.len(),
@@ -434,7 +434,7 @@ fn query_batching() {
             r: &QueryResult,
             rs: &mut Vec<QueryResult>,
         ) {
-            let stream = time_query(keys, || ph.index_stream::<A, false>(keys));
+            let stream = time_query(keys, || ph.index_stream::<A, false, _>(keys));
             // Somehow, index_batch has very weird scaling behaviour in A.
             // index_batch2 *does* improve as A increases, and so we use that one instead.
             // let batch = time_query(keys, || ph.index_batch_exact::<A, false>(keys));
@@ -633,9 +633,9 @@ fn query_throughput() {
 
             const A: usize = 32;
             let stream_phf =
-                time_query_parallel(threads, keys, |keys| ph.index_stream::<A, false>(keys));
+                time_query_parallel(threads, keys, |keys| ph.index_stream::<A, false, _>(keys));
             let stream_mphf =
-                time_query_parallel(threads, keys, |keys| ph.index_stream::<A, true>(keys));
+                time_query_parallel(threads, keys, |keys| ph.index_stream::<A, true, _>(keys));
 
             rs.push(QueryResult {
                 batch_size: A,
