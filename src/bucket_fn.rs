@@ -1,3 +1,5 @@
+use mem_dbg::MemSize;
+
 use crate::util::mul_high;
 use std::fmt::Debug;
 
@@ -8,7 +10,7 @@ pub trait BucketFn: Clone + Copy + Sync + Debug {
     fn call(&self, x: u64) -> u64;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MemSize, Default)]
 pub struct Linear;
 
 impl BucketFn for Linear {
@@ -32,7 +34,7 @@ impl BucketFn for Linear {
 ///                ~~~ slope1 ~~~
 /// line2: y = x * ((1 - gamma) / (1 - beta)) + (gamma - beta) / (1 - beta)
 ///                ~~~~~~~~~ slope2 ~~~~~~~~~   ~~~~~~~~~~ offset ~~~~~~~~~
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MemSize)]
 pub struct Skewed {
     beta_f: f64,
     gamma_f: f64,
@@ -93,7 +95,7 @@ impl BucketFn for Skewed {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MemSize)]
 pub struct Optimal {
     pub eps: f64,
 }
@@ -110,7 +112,7 @@ impl BucketFn for Optimal {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MemSize, Default)]
 pub struct Square;
 
 impl BucketFn for Square {
@@ -119,7 +121,7 @@ impl BucketFn for Square {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MemSize, Default)]
 pub struct SquareEps;
 
 impl BucketFn for SquareEps {
@@ -128,7 +130,7 @@ impl BucketFn for SquareEps {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MemSize, Default)]
 pub struct Cubic;
 
 impl BucketFn for Cubic {
@@ -138,7 +140,7 @@ impl BucketFn for Cubic {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MemSize, Default)]
 pub struct CubicEps;
 
 impl BucketFn for CubicEps {

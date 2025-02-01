@@ -9,7 +9,7 @@ use clap::builder::PossibleValue;
 use super::*;
 
 /// Select the sharding method to use.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, MemSize)]
 pub enum Sharding {
     /// Process all hashes as a single Vec in memory.
     #[default]

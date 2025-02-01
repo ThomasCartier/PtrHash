@@ -1,3 +1,5 @@
+use mem_dbg::MemSize;
+
 use crate::KeyT;
 use std::fmt::Debug;
 
@@ -50,7 +52,7 @@ pub struct NoHash;
 /// Note that this doesn't use a seed, so while it is a bijection on `u64` keys,
 /// larger keys will give unfixable collisions.
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
+#[derive(Clone, MemSize)]
 pub struct FxHash;
 /// Very fast weak 64bit hash with more quality than FxHash.
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
@@ -83,7 +85,7 @@ pub struct City128;
 #[derive(Clone)]
 pub struct Wy64;
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
+#[derive(Clone, MemSize)]
 pub struct Xx64;
 /// Fast good 128bit hash (but fails at 10^11 keys).
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]

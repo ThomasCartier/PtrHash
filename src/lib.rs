@@ -64,6 +64,7 @@ use bucket_fn::Linear;
 use cacheline_ef::CachelineEfVec;
 use itertools::izip;
 use itertools::Itertools;
+use mem_dbg::MemSize;
 use pack::EliasFano;
 use pack::MutPacked;
 use rand::{random, Rng, SeedableRng};
@@ -79,7 +80,7 @@ use crate::{hash::*, pack::Packed, reduce::*, util::log_duration};
 /// Parameters for PtrHash construction.
 ///
 /// Since these are not used in inner loops they are simple variables instead of template arguments.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct PtrHashParams<BF> {
     /// Set to false to disable remapping to a minimal PHF.
@@ -171,7 +172,7 @@ type PilotHash = u64;
 /// `Hx`: The hasher to use for keys, default `FxHash`.
 /// `V`: The pilots type. Usually `Vec<u8>`, or `&[u8]` for Epserde.
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
+#[derive(Clone, MemSize)]
 pub struct PtrHash<
     Key: KeyT = u64,
     BF: BucketFn = bucket_fn::CubicEps,

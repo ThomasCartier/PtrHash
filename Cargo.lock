@@ -814,6 +814,7 @@ dependencies = [
  "highway",
  "itertools 0.11.0",
  "lazy_static",
+ "mem_dbg",
  "metrohash",
  "murmur2",
  "murmur3",
