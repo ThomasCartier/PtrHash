@@ -255,7 +255,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn bench_hashers<Key: KeyT, BF: BucketFn>(total: usize, params: &PtrHashParams<BF>, keys: &[Key]) {
+fn bench_hashers<BF: BucketFn>(total: usize, params: &PtrHashParams<BF>, keys: &[u64]) {
     let n = keys.len();
     let loops = total.div_ceil(n);
     fn test<H: Hasher<Key>, Key: KeyT, BF: BucketFn>(

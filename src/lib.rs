@@ -186,7 +186,7 @@ type PilotHash = u64;
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone, MemSize)]
 pub struct PtrHash<
-    Key: KeyT = u64,
+    Key: KeyT + ?Sized = u64,
     BF: BucketFn = bucket_fn::CubicEps,
     F: Packed = CachelineEfVec,
     Hx: Hasher<Key> = hash::FxHash,
@@ -683,7 +683,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             crate::util::prefetch_index(self.pilots.as_ref(), next_buckets[idx]);
         }
 
-        // Manual iterator implementation so we avoid the overhead and non-inlining of Chain.
+        // Manual iterator implementation so we avoid the overhead and
+        // non-inlining of Chain, and instead have a manual fold.
         struct It<
             'a,
             const B: usize,

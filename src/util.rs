@@ -84,7 +84,6 @@ pub fn generate_string_keys(n: usize) -> Vec<Vec<u8>> {
         })
         .collect();
     log_duration("generatekeys", start);
-    eprintln!("DONE");
     keys
 }
 
