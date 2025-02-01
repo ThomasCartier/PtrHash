@@ -34,6 +34,7 @@ fn main() {
 
     // 4.2.1
     // query_batching(); // 40min
+
     // 4.2.2
     // query_throughput(); // 12min
 }
@@ -407,6 +408,7 @@ fn query_batching() {
             ..r0.clone()
         };
         eprintln!("Result: {r:?}");
+        rs.push(r.clone());
 
         let q_phf = time_query_f(keys, || {
             let mut sum = 0;
