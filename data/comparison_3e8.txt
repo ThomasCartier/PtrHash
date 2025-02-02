@@ -1,0 +1,406 @@
+
+Contender: PtrHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Sending to Rust
+N: 300000000 len 300000000
+Cooldown
+Constructing
+#shards: 1
+keys/shard: 300000000
+Using slots per part: 524288, expected keys 519031, expected max keys: 521600 (3.5663914167327113 σ)
+Pilots: 100MB
+Taken: 37MB
+collect hash:          1.00s
+┌ radix sort:          1.53s
+├ check dups:          0.11s
+exp key/part:     519031 stddev        720
+exp max k/pt:     521191              2160     3.00
+    max k/pt:     521033              2002     2.78
+    slots/pt:     524288              5257     7.30
+exp    alpha:         99.00%
+max    alpha:         99.38%
+├part starts:          0.00s
+sort buckets:          1.64s
+ find pilots:          4.93s
+Remap len: 3038464
+Remap size: 12MB = 12153856B
+  remap free:          0.31s
+ total build:          7.92s
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PtrHash params=fast bitsPerElement=2.99085 constructionTimeMilliseconds=7916 queryTimeMilliseconds=3811 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: PtrHash-streaming
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Sending to Rust
+N: 300000000 len 300000000
+Cooldown
+Constructing
+#shards: 1
+keys/shard: 300000000
+Using slots per part: 524288, expected keys 519031, expected max keys: 521600 (3.5663914167327113 σ)
+Pilots: 100MB
+Taken: 37MB
+collect hash:          1.00s
+┌ radix sort:          1.63s
+├ check dups:          0.11s
+exp key/part:     519031 stddev        720
+exp max k/pt:     521191              2160     3.00
+    max k/pt:     520951              1920     2.67
+    slots/pt:     524288              5257     7.30
+exp    alpha:         99.00%
+max    alpha:         99.36%
+├part starts:          0.00s
+sort buckets:          1.75s
+ find pilots:          4.93s
+Remap len: 3038464
+Remap size: 12MB = 12153856B
+  remap free:          0.30s
+ total build:          8.01s
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PtrHash-streaming params=fast bitsPerElement=2.99085 constructionTimeMilliseconds=8011 queryTimeMilliseconds=2012 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: PtrHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Sending to Rust
+N: 300000000 len 300000000
+Cooldown
+Constructing
+#shards: 1
+keys/shard: 300000000
+Using slots per part: 524288, expected keys 519031, expected max keys: 521600 (3.5663914167327113 σ)
+Pilots: 75MB
+Taken: 37MB
+collect hash:          1.01s
+┌ radix sort:          1.51s
+├ check dups:          0.11s
+exp key/part:     519031 stddev        720
+exp max k/pt:     521191              2160     3.00
+    max k/pt:     520875              1844     2.56
+    slots/pt:     524288              5257     7.30
+exp    alpha:         99.00%
+max    alpha:         99.35%
+├part starts:          0.00s
+sort buckets:          1.63s
+ find pilots:         15.90s
+Remap len: 3038464
+Remap size: 4MB = 4419584B
+  remap free:          0.12s
+ total build:         18.68s
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PtrHash params=compact bitsPerElement=2.11793 constructionTimeMilliseconds=18675 queryTimeMilliseconds=4165 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: PtrHash-streaming
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Sending to Rust
+N: 300000000 len 300000000
+Cooldown
+Constructing
+#shards: 1
+keys/shard: 300000000
+Using slots per part: 524288, expected keys 519031, expected max keys: 521600 (3.5663914167327113 σ)
+Pilots: 75MB
+Taken: 37MB
+collect hash:          1.01s
+┌ radix sort:          1.51s
+├ check dups:          0.11s
+exp key/part:     519031 stddev        720
+exp max k/pt:     521191              2160     3.00
+    max k/pt:     521285              2254     3.13
+    slots/pt:     524288              5257     7.30
+exp    alpha:         99.00%
+max    alpha:         99.43%
+├part starts:          0.00s
+sort buckets:          1.63s
+ find pilots:         15.81s
+Remap len: 3038464
+Remap size: 4MB = 4419584B
+  remap free:          0.12s
+ total build:         18.58s
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PtrHash-streaming params=compact bitsPerElement=2.11793 constructionTimeMilliseconds=18584 queryTimeMilliseconds=2252 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: PTHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PTHash minimal=1 lambda=4.000000 encoder=compact-compact lf=0.990000 bitsPerElement=3.19202 constructionTimeMilliseconds=120914 queryTimeMilliseconds=7673 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: PTHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PTHash minimal=1 lambda=5.000000 encoder=elias_fano lf=0.990000 bitsPerElement=2.17066 constructionTimeMilliseconds=229398 queryTimeMilliseconds=15562 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: PartitionedPTHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PartitionedPTHash minimal=1 lambda=4.000000 encoder=compact-compact lf=0.990000 bitsPerElement=3.1629 constructionTimeMilliseconds=51934 queryTimeMilliseconds=7719 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: PartitionedPTHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PartitionedPTHash minimal=1 lambda=5.000000 encoder=elias_fano lf=0.990000 bitsPerElement=2.17056 constructionTimeMilliseconds=96799 queryTimeMilliseconds=15574 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: DensePartitionedPTHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+partitioning: 4 [sec]
+mapping+ordering: 5 [sec]
+searching: 7 [sec]
+encoding: 0 [sec]
+RESULT name=DensePartitionedPTHash lambda=3.900000 encoder=inter-compact partitionSize=2500 lf=1.000000 bitsPerElement=4.13774 constructionTimeMilliseconds=18679 queryTimeMilliseconds=11636 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: DensePartitionedPTHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+partitioning: 4 [sec]
+mapping+ordering: 5 [sec]
+searching: 12 [sec]
+encoding: 1 [sec]
+RESULT name=DensePartitionedPTHash lambda=4.500000 encoder=inter-R partitionSize=2500 lf=1.000000 bitsPerElement=2.33676 constructionTimeMilliseconds=23995 queryTimeMilliseconds=17886 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: DensePartitionedPTHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+partitioning: 4 [sec]
+mapping+ordering: 5 [sec]
+searching: 53 [sec]
+encoding: 0 [sec]
+RESULT name=DensePartitionedPTHash lambda=6.500000 encoder=inter-R partitionSize=2500 lf=1.000000 bitsPerElement=1.93543 constructionTimeMilliseconds=64554 queryTimeMilliseconds=16272 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: DensePartitionedPTHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+partitioning: 4 [sec]
+mapping+ordering: 5 [sec]
+searching: 122 [sec]
+encoding: 0 [sec]
+RESULT name=DensePartitionedPTHash lambda=7.000000 encoder=inter-R partitionSize=2500 lf=1.000000 bitsPerElement=1.86346 constructionTimeMilliseconds=133724 queryTimeMilliseconds=15654 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: SicHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Creating MHCs
+Creating MHCs
+Creating MHCs
+Creating MHCs
+Creating MHCs
+Creating MHCs
+MHCs took 1926
+Inserting into Cuckoo
+MHCs took 1948
+Inserting into Cuckoo
+MHCs took 1877
+Inserting into Cuckoo
+MHCs took 1888
+Inserting into Cuckoo
+MHCs took 1884
+Inserting into Cuckoo
+MHCs took 1909
+Inserting into Cuckoo
+Buckets took 8133
+On average, the small hash tables needed to be retried 1.0238 times
+Constructing Ribbon
+Buckets took 8080
+On average, the small hash tables needed to be retried 1.0241 times
+Constructing Ribbon
+Buckets took 8125
+On average, the small hash tables needed to be retried 1.0229 times
+Constructing Ribbon
+Buckets took 8297
+On average, the small hash tables needed to be retried 1.0271 times
+Constructing Ribbon
+Buckets took 8168
+On average, the small hash tables needed to be retried 1.0238 times
+Constructing Ribbon
+Buckets took 8287
+On average, the small hash tables needed to be retried 1.0231 times
+Constructing Ribbon
+Ribbon took 6530
+Ribbon took 6519
+Ribbon took 6515
+Ribbon took 6562
+Ribbon took 6558
+Ribbon took 6498
+Preparing query plan
+Cooldown
+Querying
+Remap space: 0.248946
+Remap space: 0.248944
+Remap space: 0.248941
+Remap space: 0.248939
+Remap space: 0.248943
+Remap space: 0.248942
+RESULT name=SicHash minimal=1 lf=0.970000 t1=0.449995 t2=0.309997 ribbonWidth=64 minimalFanoLowerBits=3 bucketSize=5000 bitsPerElement=2.08 constructionTimeMilliseconds=18986 queryTimeMilliseconds=14074 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: SicHash
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Creating MHCs
+Creating MHCs
+Creating MHCs
+Creating MHCs
+Creating MHCs
+Creating MHCs
+MHCs took 1911
+Inserting into Cuckoo
+MHCs took 1919
+Inserting into Cuckoo
+MHCs took 1959
+Inserting into Cuckoo
+MHCs took 1864
+Inserting into Cuckoo
+MHCs took 1891
+Inserting into Cuckoo
+MHCs took 1911
+Inserting into Cuckoo
+Buckets took 3268
+On average, the small hash tables needed to be retried 1 times
+Constructing Ribbon
+Buckets took 3293
+On average, the small hash tables needed to be retried 1 times
+Constructing Ribbon
+Buckets took 3206
+On average, the small hash tables needed to be retried 1 times
+Constructing Ribbon
+Buckets took 3238
+On average, the small hash tables needed to be retried 1 times
+Constructing Ribbon
+Buckets took 3438
+On average, the small hash tables needed to be retried 1 times
+Constructing Ribbon
+Buckets took 3346
+On average, the small hash tables needed to be retried 1 times
+Constructing Ribbon
+Ribbon took 6602
+Ribbon took 6615
+Ribbon took 6599
+Ribbon took 6649
+Ribbon took 6575
+Ribbon took 6782
+Preparing query plan
+Cooldown
+Querying
+Remap space: 0.570026
+Remap space: 0.570024
+Remap space: 0.570028
+Remap space: 0.570028
+Remap space: 0.570031
+Remap space: 0.57003
+RESULT name=SicHash minimal=1 lf=0.900000 t1=0.209998 t2=0.779992 ribbonWidth=64 minimalFanoLowerBits=3 bucketSize=5000 bitsPerElement=2.4112 constructionTimeMilliseconds=14280 queryTimeMilliseconds=14926 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: SIMDRecSplit
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=SIMDRecSplit l=5 b=5 bitsPerElement=2.96019 constructionTimeMilliseconds=7908 queryTimeMilliseconds=30993 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: SIMDRecSplit
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=SIMDRecSplit l=8 b=100 bitsPerElement=1.81223 constructionTimeMilliseconds=19716 queryTimeMilliseconds=25806 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: Fmph
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Sending to Rust
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=Fmph gamma=1.000000 bitsPerElement=2.80318 constructionTimeMilliseconds=20721 queryTimeMilliseconds=23571 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: Fmph
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Sending to Rust
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=Fmph gamma=2.000000 bitsPerElement=3.40045 constructionTimeMilliseconds=13061 queryTimeMilliseconds=16765 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: FmphGo
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Sending to Rust
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=FmphGo gamma=1.000000 bitsPerElement=2.21247 constructionTimeMilliseconds=126853 queryTimeMilliseconds=21181 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: FmphGo
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Sending to Rust
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=FmphGo gamma=2.000000 bitsPerElement=2.85948 constructionTimeMilliseconds=89513 queryTimeMilliseconds=16023 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: cmph-CHD
+Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
+Converting input
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=cmph-CHD c=1.000000 b=3 bitsPerElement=2.26577 constructionTimeMilliseconds=317813 queryTimeMilliseconds=54227 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
