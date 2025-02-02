@@ -423,3 +423,25 @@ Preparing query plan
 Cooldown
 Querying
 RESULT name=FiPS gamma=2.000000 lineSize=256 offsetSize=16 upperRank=1 bitsPerElement=3.52056 constructionTimeMilliseconds=27890 queryTimeMilliseconds=10928 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: BipartiteShockHashFlat
+Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=BipartiteShockHashFlat l=64 bitsPerElement=1.61803 constructionTimeMilliseconds=641918 queryTimeMilliseconds=20079 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: DensePartitionedPTHash
+Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+partitioning: 5 [sec]
+mapping+ordering: 5 [sec]
+searching: 54 [sec]
+encoding: 0 [sec]
+RESULT name=DensePartitionedPTHash lambda=6.500000 encoder=inter-compact partitionSize=2500 lf=1.000000 bitsPerElement=2.44249 constructionTimeMilliseconds=65880 queryTimeMilliseconds=10807 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
