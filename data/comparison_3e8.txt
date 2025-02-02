@@ -404,3 +404,22 @@ Preparing query plan
 Cooldown
 Querying
 RESULT name=cmph-CHD c=1.000000 b=3 bitsPerElement=2.26577 constructionTimeMilliseconds=317813 queryTimeMilliseconds=54227 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+
+Contender: FiPS
+Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=FiPS gamma=1.500000 lineSize=256 offsetSize=16 upperRank=1 bitsPerElement=3.11923 constructionTimeMilliseconds=32784 queryTimeMilliseconds=12416 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: FiPS
+Input generation complete.
+Cooldown
+Constructing
+Preparing query plan
+Cooldown
+Querying
+RESULT name=FiPS gamma=2.000000 lineSize=256 offsetSize=16 upperRank=1 bitsPerElement=3.52056 constructionTimeMilliseconds=27890 queryTimeMilliseconds=10928 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
