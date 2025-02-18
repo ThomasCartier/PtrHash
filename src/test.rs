@@ -36,6 +36,7 @@ fn index_stream() {
     }
 }
 
+#[cfg(feature = "unstable")]
 #[test]
 fn index_batch() {
     for n in [10usize, 100, 1000, 10_000, 100_000, 1_000_000] {

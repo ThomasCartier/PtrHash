@@ -1,7 +1,7 @@
 // TODO:
 // - Specialization for instances with a single part.
 // - Use trace instead of eprintln.
-#![feature(iter_array_chunks)]
+#![cfg_attr(feature = "unstable", feature(iter_array_chunks))]
 //! PTRHash is a minimal perfect hash function.
 //!
 //! Usage example:
@@ -785,6 +785,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     /// Queries in batches of size K.
     ///
     /// NOTE: Does not process the remainder
+    #[cfg(feature = "unstable")]
     #[inline]
     pub fn index_batch_exact<'a, const K: usize, const MINIMAL: bool>(
         &'a self,

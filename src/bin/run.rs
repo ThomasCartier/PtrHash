@@ -423,6 +423,7 @@ fn index_parallel<
                 let end = min((thread_idx + 1) * chunk_size, xs.len());
 
                 let thread_sum = if batch {
+                    #[cfg(feature = "unstable")]
                     if minimal {
                         pt.index_batch_exact::<A, true>(&xs[start_idx..end])
                             .sum::<usize>()
@@ -430,6 +431,8 @@ fn index_parallel<
                         pt.index_batch_exact::<A, false>(&xs[start_idx..end])
                             .sum::<usize>()
                     }
+                    #[cfg(not(feature = "unstable"))]
+                    panic!("Enable the unstable feature for batch indexing");
                 } else if batch2 {
                     if minimal {
                         pt.index_batch_exact2::<A, true>(&xs[start_idx..end])
