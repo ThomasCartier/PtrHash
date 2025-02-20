@@ -71,6 +71,18 @@ const PARAMS_SIMPLE: PtrHashParams<Linear> = PtrHashParams {
     print_stats: false,
 };
 
+const PARAMS_DEFAULT: PtrHashParams<CubicEps> = PtrHashParams {
+    alpha: 0.99,
+    lambda: 3.5,
+    bucket_fn: CubicEps,
+    // defaults...
+    slots_per_part: None,
+    keys_per_shard: 1 << 31,
+    sharding: Sharding::None,
+    remap: true,
+    print_stats: false,
+};
+
 const PARAMS_COMPACT: PtrHashParams<CubicEps> = PtrHashParams {
     alpha: 0.99,
     lambda: 4.0,
@@ -330,6 +342,7 @@ fn remap() {
     let mut results = vec![];
     let keys = &generate_keys(n);
 
+    // SIMPLE
     {
         let alpha = 0.99;
         let lambda = 3.0;
@@ -337,6 +350,15 @@ fn remap() {
         results.push(test::<CachelineEfVec>(keys, alpha, lambda, Linear));
         results.push(test::<EliasFano>(keys, alpha, lambda, Linear));
     }
+    // DEFAULT
+    {
+        let alpha = 0.99;
+        let lambda = 3.5;
+        results.push(test::<Vec<u32>>(keys, alpha, lambda, CubicEps));
+        results.push(test::<CachelineEfVec>(keys, alpha, lambda, CubicEps));
+        results.push(test::<EliasFano>(keys, alpha, lambda, CubicEps));
+    }
+    // COMPACT
     {
         let alpha = 0.99;
         let lambda = 4.0;
@@ -505,6 +527,7 @@ fn query_batching() {
         let keys = &generate_keys(n);
 
         test(keys, PARAMS_SIMPLE, &mut results);
+        test(keys, PARAMS_DEFAULT, &mut results);
         test(keys, PARAMS_COMPACT, &mut results);
     }
     write(&results, "data/query_batching.json");
@@ -673,6 +696,7 @@ fn query_throughput() {
         let keys = &generate_keys(n);
 
         test::<Vec<u32>>(keys, PARAMS_SIMPLE, &mut results);
+        test::<CachelineEfVec>(keys, PARAMS_DEFAULT, &mut results);
         test::<CachelineEfVec>(keys, PARAMS_COMPACT, &mut results);
     }
     write(&results, "data/query_throughput.json");
@@ -762,18 +786,18 @@ fn string_queries() {
         {
             let keys: Vec<u64> = generate_keys(n);
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // BOXED INT
         {
             let keys: Vec<Box<u64>> = generate_keys(n).into_iter().map(|k| Box::new(k)).collect();
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // PACKED SHORT STRING
@@ -793,9 +817,9 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // PACKED LONG STRING
@@ -815,9 +839,9 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // PACKED RANDOM STRING
@@ -838,18 +862,18 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // STRING
         {
             let keys: Vec<Vec<u8>> = generate_string_keys(n);
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_SIMPLE, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_SIMPLE, &mut results);
+            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
     }
     write(&results, "data/string_queries.json");
