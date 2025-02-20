@@ -27,20 +27,20 @@ fn main() {
     // size(); // many hours
 
     // 4.1.3
-    // remap(); // 12min
+    // remap(); // 22min
 
     // 4.1.4
-    // sharding(Sharding::Hybrid(1 << 37), "data/sharding_hybrid.json"); // 55min
-    // sharding(Sharding::Memory, "data/sharding_memory.json"); // 1h
+    // sharding(Sharding::Hybrid(1 << 37), "data/sharding_hybrid.json"); // 40min
+    // sharding(Sharding::Memory, "data/sharding_memory.json"); // 40min
 
     // 4.2.1
     // query_batching(); // 40min
 
     // 4.2.2
-    // query_throughput(); // 12min
+    // query_throughput(); // 22min
 
     // 4.?.?
-    string_queries(); // 4min
+    // string_queries(); // 30min
 }
 
 #[allow(unused)]
@@ -57,7 +57,7 @@ fn all() {
 
 const SMALL_N: usize = 20_000_000;
 const LARGE_N: usize = 1_000_000_000;
-const NUM_QUERIES: usize = 1_00_000_000;
+const NUM_QUERIES: usize = 1_000_000_000;
 
 const PARAMS_SIMPLE: PtrHashParams<Linear> = PtrHashParams {
     alpha: 0.99,
@@ -316,7 +316,7 @@ fn remap() {
         let q32_phf = time_query(keys, || ph.index_stream::<32, false, _>(keys));
         let q32_mphf = time_query(keys, || ph.index_stream::<32, true, _>(keys));
 
-        Result {
+        let r = Result {
             n: keys.len(),
             alpha,
             lambda,
@@ -335,7 +335,10 @@ fn remap() {
             q1_mphf_bb,
             q32_phf,
             q32_mphf,
-        }
+        };
+        eprintln!("{r:?}");
+
+        r
     }
 
     let n = LARGE_N;
@@ -379,7 +382,7 @@ fn sharding(sharding: Sharding, path: &str) {
         n,
         keys,
         PtrHashParams {
-            lambda: 3.9,
+            lambda: 3.5,
             alpha: 0.99,
             // ~16GiB of keys per shard.
             keys_per_shard: 1 << 31,
@@ -394,7 +397,7 @@ fn sharding(sharding: Sharding, path: &str) {
     let total = pilots + remap;
     let r = Result {
         n,
-        lambda: 3.9,
+        lambda: 3.5,
         alpha: 0.99,
         construction_6: c6,
         bucketfn: format!("{:?}", bucket_fn),
@@ -527,7 +530,7 @@ fn query_batching() {
         let keys = &generate_keys(n);
 
         test(keys, PARAMS_SIMPLE, &mut results);
-        test(keys, PARAMS_DEFAULT, &mut results);
+        // test(keys, PARAMS_DEFAULT, &mut results); // Identical to compact
         test(keys, PARAMS_COMPACT, &mut results);
     }
     write(&results, "data/query_batching.json");
@@ -696,7 +699,7 @@ fn query_throughput() {
         let keys = &generate_keys(n);
 
         test::<Vec<u32>>(keys, PARAMS_SIMPLE, &mut results);
-        test::<CachelineEfVec>(keys, PARAMS_DEFAULT, &mut results);
+        // test::<CachelineEfVec>(keys, PARAMS_DEFAULT, &mut results); // Identical to compact
         test::<CachelineEfVec>(keys, PARAMS_COMPACT, &mut results);
     }
     write(&results, "data/query_throughput.json");
@@ -782,22 +785,24 @@ fn string_queries() {
     let mut results = vec![];
     // We can't fit 1G strings into memory, sadly.
     for n in [100_000_000] {
+        type R = CachelineEfVec;
+
         // INT
         {
             let keys: Vec<u64> = generate_keys(n);
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // BOXED INT
         {
             let keys: Vec<Box<u64>> = generate_keys(n).into_iter().map(|k| Box::new(k)).collect();
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // PACKED SHORT STRING
@@ -817,9 +822,9 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // PACKED LONG STRING
@@ -839,9 +844,9 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // PACKED RANDOM STRING
@@ -862,18 +867,18 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
 
         // STRING
         {
             let keys: Vec<Vec<u8>> = generate_string_keys(n);
 
-            test::<Vec<u32>, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
-            test::<Vec<u32>, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, FxHash>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx64>(&keys, PARAMS_DEFAULT, &mut results);
+            test::<R, _, Xx128>(&keys, PARAMS_DEFAULT, &mut results);
         }
     }
     write(&results, "data/string_queries.json");
