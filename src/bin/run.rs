@@ -119,7 +119,7 @@ fn main() -> anyhow::Result<()> {
                 .build_global()
                 .unwrap();
             let keys = ptr_hash::util::generate_keys(n);
-            let pt = PH::<_, Linear>::new(
+            let pt = PH::<_, CubicEps>::new(
                 &keys,
                 PtrHashParams {
                     lambda,
