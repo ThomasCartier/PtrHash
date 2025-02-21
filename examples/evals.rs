@@ -27,7 +27,7 @@ fn main() {
     // remap(); // 22min
 
     // sharding(Sharding::Hybrid(1 << 37), "data/sharding_hybrid.json"); // 40min
-    // sharding(Sharding::Memory, "data/sharding_memory.json"); // 40min
+    // sharding(Sharding::Memory, "data/sharding_memory.json"); // 50min
 
     // query_batching(); // 40min
 
@@ -64,6 +64,7 @@ const PARAMS_FAST: PtrHashParams<Linear> = PtrHashParams {
     print_stats: false,
 };
 
+#[allow(unused)]
 const PARAMS_DEFAULT: PtrHashParams<CubicEps> = PtrHashParams {
     alpha: 0.99,
     lambda: 3.5,
