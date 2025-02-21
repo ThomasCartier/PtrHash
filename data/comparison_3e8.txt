@@ -131,6 +131,72 @@ Cooldown
 Querying
 RESULT name=PtrHash-streaming params=compact bitsPerElement=2.11793 constructionTimeMilliseconds=18584 queryTimeMilliseconds=2252 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
 
+Contender: PtrHash
+Input generation complete.
+Converting input
+Sending to Rust
+N: 300000000 len 300000000
+Cooldown
+Constructing
+#shards: 1
+keys/shard: 300000000
+Using slots per part: 524288, expected keys 519031, expected max keys: 521600 (3.5663914167327113 σ)
+Pilots: 85MB
+Taken: 37MB
+collect hash:          1.01s
+┌ radix sort:          1.59s
+├ check dups:          0.11s
+exp key/part:     519031 stddev        720
+exp max k/pt:     521191              2160     3.00
+    max k/pt:     521048              2017     2.80
+    slots/pt:     524288              5257     7.30
+exp    alpha:         99.00%
+max    alpha:         99.38%
+├part starts:          0.00s
+sort buckets:          1.70s
+ find pilots:          6.69s
+Remap len: 3038464
+Remap size: 4MB = 4419584B
+  remap free:          0.12s
+ total build:          9.56s
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PtrHash params=default bitsPerElement=2.40364 constructionTimeMilliseconds=9555 queryTimeMilliseconds=4436 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: PtrHash-streaming
+Input generation complete.
+Converting input
+Sending to Rust
+N: 300000000 len 300000000
+Cooldown
+Constructing
+#shards: 1
+keys/shard: 300000000
+Using slots per part: 524288, expected keys 519031, expected max keys: 521600 (3.5663914167327113 σ)
+Pilots: 85MB
+Taken: 37MB
+collect hash:          1.01s
+┌ radix sort:          1.70s
+├ check dups:          0.12s
+exp key/part:     519031 stddev        720
+exp max k/pt:     521191              2160     3.00
+    max k/pt:     520988              1957     2.72
+    slots/pt:     524288              5257     7.30
+exp    alpha:         99.00%
+max    alpha:         99.37%
+├part starts:          0.00s
+sort buckets:          1.82s
+ find pilots:          6.65s
+Remap len: 3038464
+Remap size: 4MB = 4419584B
+  remap free:          0.12s
+ total build:          9.62s
+Preparing query plan
+Cooldown
+Querying
+RESULT name=PtrHash-streaming params=default bitsPerElement=2.40364 constructionTimeMilliseconds=9623 queryTimeMilliseconds=2534 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
 Contender: PTHash
 Generating inputGenerating input: 0%Generating input: 20%Generating input: 40%Generating input: 60%Generating input: 80%Input generation complete.
 Cooldown
@@ -445,3 +511,39 @@ mapping+ordering: 5 [sec]
 searching: 54 [sec]
 encoding: 0 [sec]
 RESULT name=DensePartitionedPTHash lambda=6.500000 encoder=inter-compact partitionSize=2500 lf=1.000000 bitsPerElement=2.44249 constructionTimeMilliseconds=65880 queryTimeMilliseconds=10807 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+
+Contender: Consensus
+Input generation complete.
+Cooldown
+Constructing
+Level 0 (256 keys each): 9842 ms, 1 us per output bit
+Level 1 (128 keys each): 8583 ms, 0 us per output bit
+Level 2 (64 keys each): 7540 ms, 0 us per output bit
+Level 3 (32 keys each): 8098 ms, 0 us per output bit
+Level 4 (16 keys each): 8923 ms, 0 us per output bit
+Level 5 (8 keys each): 12518 ms, 0 us per output bit
+Level 6 (4 keys each): 23424 ms, 0 us per output bit
+Level 7 (2 keys each): 36821 ms, 0 us per output bit
+Preparing query plan
+Cooldown
+Querying
+RESULT name=Consensus k=256 overhead=0.100000 bitsPerElement=1.57815 constructionTimeMilliseconds=156331 queryTimeMilliseconds=56504 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
+
+Contender: Consensus
+Input generation complete.
+Cooldown
+Constructing
+Level 0 (512 keys each): 15352 ms, 4 us per output bit
+Level 1 (256 keys each): 14912 ms, 2 us per output bit
+Level 2 (128 keys each): 15489 ms, 1 us per output bit
+Level 3 (64 keys each): 15211 ms, 0 us per output bit
+Level 4 (32 keys each): 17668 ms, 0 us per output bit
+Level 5 (16 keys each): 21112 ms, 0 us per output bit
+Level 6 (8 keys each): 34618 ms, 0 us per output bit
+Level 7 (4 keys each): 70723 ms, 0 us per output bit
+Level 8 (2 keys each): 117305 ms, 0 us per output bit
+Preparing query plan
+Cooldown
+Querying
+RESULT name=Consensus k=512 overhead=0.030000 bitsPerElement=1.49343 constructionTimeMilliseconds=359590 queryTimeMilliseconds=52759 numQueries=100000000 numQueriesTotal=100000000 N=300000000 loadFactor=1 threads=6 queryThreads=1
