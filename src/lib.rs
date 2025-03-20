@@ -107,6 +107,10 @@ pub struct PtrHashParams<BF> {
 }
 
 impl PtrHashParams<Linear> {
+    /// Default 'fast' parameters:
+    /// - `alpha=0.99`
+    /// - `lambda=3.0`
+    /// - `bucket_fn=Linear`
     pub fn default_fast() -> Self {
         Self {
             remap: true,
@@ -139,6 +143,12 @@ impl PtrHashParams<SquareEps> {
 }
 
 impl PtrHashParams<CubicEps> {
+    /// Default 'compact' parameters:
+    /// - `alpha=0.99`
+    /// - `lambda=4.0`
+    /// - `bucket_fn=CubicEps`
+    ///
+    /// This occasionally fails construction. If so, try again or use lambda=3.9.
     pub fn default_compact() -> Self {
         Self {
             remap: true,
