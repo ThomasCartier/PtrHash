@@ -207,7 +207,7 @@ type PilotHash = u64;
 /// PtrHash datastructure.
 /// The recommended way to use PtrHash with default types.
 ///
-/// `F`: The packing to use for remapping free slots, default `TinyEf`.
+/// `F`: The packing to use for remapping free slots, default `CachelineEf`.
 /// `Hx`: The hasher to use for keys, default `FxHash`.
 /// `V`: The pilots type. Usually `Vec<u8>`, or `&[u8]` for Epserde.
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]

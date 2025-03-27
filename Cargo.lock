@@ -140,10 +140,11 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 [[package]]
 name = "cacheline-ef"
 version = "0.1.0"
-source = "git+https://github.com/ragnargrootkoerkamp/cacheline-ef#30707762f5515cd66ebe8a976b87a0d58fa2c4e0"
+source = "git+https://github.com/ragnargrootkoerkamp/cacheline-ef#988e59d41ae633a63f389d6563ab4f731a92a126"
 dependencies = [
  "common_traits",
- "mem_dbg 0.2.5",
+ "epserde",
+ "mem_dbg",
 ]
 
 [[package]]
@@ -381,7 +382,7 @@ dependencies = [
  "common_traits",
  "epserde-derive",
  "maligned",
- "mem_dbg 0.3.0",
+ "mem_dbg",
  "mmap-rs",
  "sealed",
  "thiserror 2.0.12",
@@ -601,35 +602,14 @@ checksum = "7e88c3cbe8288f77f293e48a28b3232e3defd203a6d839fa7f68ea4329e83464"
 
 [[package]]
 name = "mem_dbg"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83623b4167d3fbfb0f60eaa0cfd0f303a44e50f35a41b8d6bce87ad9d3e81410"
-dependencies = [
- "bitflags 2.9.0",
- "mem_dbg-derive 0.1.7",
-]
-
-[[package]]
-name = "mem_dbg"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3e3eb8a4c851185832fb250e5c041e74f4408e11fd56263cc1f61b48f9174f5"
 dependencies = [
  "bitflags 2.9.0",
  "maligned",
- "mem_dbg-derive 0.2.0",
+ "mem_dbg-derive",
  "mmap-rs",
-]
-
-[[package]]
-name = "mem_dbg-derive"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1ac4642a5a1615ce3cdd3479f8d03c05068aab5a285a0722a24d5080d3f3e22"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -832,7 +812,7 @@ dependencies = [
  "highway",
  "itertools 0.14.0",
  "lazy_static",
- "mem_dbg 0.3.0",
+ "mem_dbg",
  "metrohash",
  "murmur2",
  "murmur3",

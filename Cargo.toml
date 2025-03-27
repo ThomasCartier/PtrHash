@@ -58,7 +58,7 @@ serde_json = "1.0.133"
 mem_dbg = "0.3.0"
 
 [features]
-epserde = ["dep:epserde", "dep:epserde-derive"]
+epserde = ["dep:epserde", "dep:epserde-derive", "cacheline-ef/epserde"]
 # Enable iter_array_chunks unstable feature for iter_batch_exact, which is only for benchmarking.
 unstable = []
 default = ["epserde"]
