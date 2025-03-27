@@ -5,11 +5,17 @@ use std::{
 };
 
 use clap::builder::PossibleValue;
+use common_traits::ToBytes;
+use epserde::{
+    deser::{DeserializeInner, ReadNoStd},
+    ser::SerializeInner,
+};
 
 use super::*;
 
 /// Select the sharding method to use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub enum Sharding {
     /// Process all hashes as a single Vec in memory.
     #[default]
@@ -191,7 +197,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                         let (pre, data, post) = unsafe { v.align_to_mut::<u8>() };
                         assert!(pre.is_empty());
                         assert!(post.is_empty());
-                        reader.read_exact(data).unwrap();
+                        Read::read_exact(&mut reader, data).unwrap();
                         log_duration("Read shard", start);
                         eprintln!("Read {shard:>3}/{:3}: {} keys", self.shards, cnt);
                         v

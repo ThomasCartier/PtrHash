@@ -11,6 +11,7 @@ pub trait BucketFn: Clone + Copy + Sync + Debug {
 }
 
 #[derive(Clone, Copy, Debug, MemSize, Default)]
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct Linear;
 
 impl BucketFn for Linear {
@@ -35,6 +36,7 @@ impl BucketFn for Linear {
 /// line2: y = x * ((1 - gamma) / (1 - beta)) + (gamma - beta) / (1 - beta)
 ///                ~~~~~~~~~ slope2 ~~~~~~~~~   ~~~~~~~~~~ offset ~~~~~~~~~
 #[derive(Clone, Copy, Debug, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct Skewed {
     beta_f: f64,
     gamma_f: f64,
@@ -96,6 +98,7 @@ impl BucketFn for Skewed {
 }
 
 #[derive(Clone, Copy, Debug, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct Optimal {
     pub eps: f64,
 }
@@ -113,6 +116,7 @@ impl BucketFn for Optimal {
 }
 
 #[derive(Clone, Copy, Debug, MemSize, Default)]
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct Square;
 
 impl BucketFn for Square {
@@ -122,6 +126,7 @@ impl BucketFn for Square {
 }
 
 #[derive(Clone, Copy, Debug, MemSize, Default)]
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct SquareEps;
 
 impl BucketFn for SquareEps {
@@ -131,6 +136,7 @@ impl BucketFn for SquareEps {
 }
 
 #[derive(Clone, Copy, Debug, MemSize, Default)]
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct Cubic;
 
 impl BucketFn for Cubic {
@@ -141,6 +147,7 @@ impl BucketFn for Cubic {
 }
 
 #[derive(Clone, Copy, Debug, MemSize, Default)]
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct CubicEps;
 
 impl BucketFn for CubicEps {
