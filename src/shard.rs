@@ -16,6 +16,8 @@ use super::*;
 /// Select the sharding method to use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
+#[cfg_attr(feature = "epserde", repr(C))]
+#[cfg_attr(feature = "epserde", zero_copy)]
 pub enum Sharding {
     /// Process all hashes as a single Vec in memory.
     #[default]

@@ -19,6 +19,8 @@ pub trait Reduce: Copy + Sync + std::fmt::Debug {
 /// NOTE: This only uses the lg(n) high-order bits of entropy from the hash.
 #[derive(Copy, Clone, Debug, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
+#[cfg_attr(feature = "epserde", repr(C))]
+#[cfg_attr(feature = "epserde", zero_copy)]
 pub struct FastReduce {
     d: u64,
 }
@@ -40,6 +42,8 @@ impl Reduce for FastReduce {
 /// Only works when the modulus is a power of 2.
 #[derive(Copy, Clone, Debug, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
+#[cfg_attr(feature = "epserde", repr(C))]
+#[cfg_attr(feature = "epserde", zero_copy)]
 pub struct MulReduce {
     mask: u64,
 }
