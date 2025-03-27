@@ -65,3 +65,7 @@ default = ["epserde"]
 
 [dev-dependencies]
 serde_json = "1.0.133"
+
+[[example]]
+name = "epserde"
+required-features = ["epserde"]
