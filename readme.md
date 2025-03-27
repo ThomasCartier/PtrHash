@@ -1,101 +1,62 @@
-# PtrHash
+# PtrHash: Minimal Perfect Hashing at RAM Throughput
 
-PTRHash is a fast and space efficient *minimal perfect hash function* that maps
-a list of `n` distinct keys into `[n]`.  It is an adaptation of [PTHash](https://github.com/jermp/pthash), and
-written in Rust.
+[![crates.io](https://img.shields.io/crates/v/ptr_hash.svg)](https://crates.io/crates/ptr_hash)
+[![docs.rs](https://img.shields.io/docsrs/ptr_hash.svg)](https://docs.rs/ptr_hash)
 
-I'm keeping a blogpost with remarks, ideas, implementation notes,
-and experiments at <https://curiouscoding.nl/posts/ptrhash>.
+PtrHash is a fast and space efficient *minimal perfect hash function* that maps
+a list of `n` distinct keys into `{0,...,n-1}`.
+It is based on/inspired by [PTHash](https://github.com/jermp/pthash) (and much
+more than just a Rust rewrite).
 
+Read the preprint ([arXiv](https://arxiv.org/abs/2502.15539), [blog
+version](https://curiouscoding.nl/posts/ptrhash)) for details on the algorithm
+and benchmarks against other methods:
+
+*Ragnar Groot Koerkamp*. PtrHash: Minimal Perfect Hashing at RAM Throughput.
+arXiv (2025). [doi.org/10.48550/arXiv.2502.15539](https://doi.org/10.48550/arXiv.2502.15539)
+
+Source code for the paper evals can be found in
+[examples/evals.rs](examples/evals.rs), and analysis is [evals.py](evals.py).
+Plots can be found [in the blog](https://github.com/RagnarGrootKoerkamp/research/blob/master/posts/ptrhash/).
 
 ## Contact
 
-Feel free to make issues and/or PRs, reach out on twitter [@curious_coding](https://twitter.com/curious_coding), or on
-matrix [@curious_coding:matrix.org](https://matrix.to/#/@curious_coding:matrix.org).
+In case you run into any kind of issue or things are unclear,
+please make issues and/or PRs, or reach out on [twitter]((https://twitter.com/curious_coding))/[bsky](https://bsky.app/profile/curiouscoding.nl).
+I'm more than happy to help out with integrating PtrHash.
 
 ## Performance
 
-PTRHash supports up to $2^{40}$ keys. For default parameters $\alpha = 0.98$,
-$c=9$, constructing a MPHF of $n=10^9$ integer keys gives:
-- Construction takes `19s` on my `i7-10750H` (`3.6GHz`) using `6` threads:
-  - `5s` to sort hashes,
-  - `12s` to find pilots.
-- Memory usage is `2.69bits/key`:
-  - `2.46bits/key` for pilots,
-  - `0.24bits/key` for remapping.
+PtrHash supports up to `2^40` keys. For default parameters, constructing a MPHF of `n=10^9` integer keys gives:
+- Construction takes `30s` on my `i7-10750H` (`2.6GHz`) on 6 threads.
+  - `6s` to sort hashes,
+  - `23s` to find pilots.
+- Memory usage is `2.41bits/key`:
+  - `2.29bits/key` for pilots,
+  - `0.12bits/key` for remapping.
 - Queries take:
-  - `18ns/key` when indexing sequentially,
-  - `8.2ns/key` when streaming with prefetching,
-  - `2.9ns/key` when streaming with prefetching, using `4` threads.
-- When giving up on minimality of the hash and allowing values up to $n/\alpha$,
+  - `21ns/key` when indexing sequentially,
+  - `8.7ns/key` when streaming with prefetching,
+  - `2.6ns/key` when streaming with prefetching, using `4` threads.
+- When giving up on minimality of the hash and allowing values up to `n/alpha`,
   query times slightly improve:
-  - `14ns/key` when indexing sequentially,
-  - `7.5ns/key` when streaming using prefetching,
-  - `2.8ns/key` when streaming with prefetching, using `4` threads.
+  - `17.6ns/key` when indexing sequentially,
+  - `7.9ns/key` when streaming using prefetching,
+  - `2.6ns/key` when streaming with prefetching, using `4` threads.
 
 Query throughput per thread fully saturates the prefetching bandwidth of each
 core, and multithreaded querying fully saturates the DDR4 memory bandwidth.
 
-## Algorithm
-
-**Parameters:**
-
--   Given are $n < 2^40 \approx 10^{11}$ keys.
--   We partition into $P$ parts each consisting of $\approx 200000$ keys.
--   Each part consists of $B$ buckets and $S$ slots, with $S$ a power of $2$.
--   The total number of buckets $B\cdot P$ is roughly $n/\log n \cdot c$, for a
-    parameter $c\sim 8$.
--   The total number of slots is $S \cdot P$ is roughly $n / \alpha, for a
-    parameter $\alpha \sim 0.98$.
-
-**Query:**
-
-Given a key $x$, compute in order:
-
-1.  $h = h(x)$, the hash of the key which is uniform in $[0, 2^{64})$.
-2.  $part = \left\lfloor \frac {P\cdot h}{2^{64}} \right\rfloor$, the part of the key.
-3.  $h' = (P\cdot h) \mod 2^{64}$.
-4.  We split buckets into *large* and *small* buckets. (This speeds up
-    construction.) Specifically we map $\beta = 0.6$ of elements into $\gamma = 0.3$ of buckets:
-
-$$bucket = B\cdot part +
-\begin{cases}
-\left\lfloor \frac{\gamma B}{\beta 2^{64}} h'\right\rfloor& \text{if } h' < \beta \cdot 2^{64} \\
-\left\lfloor\gamma B + \frac{(1-\gamma)B}{(1-\beta)2^{64}} h'\right\rfloor  & \text{if } h' \geq \beta \cdot 2^{64}. \\
-\end{cases}$$
-
-5.  Look up the pilot $p$ for the bucket $bucket$.
-6.  For some `64`bit mixing constant $C$, the slot is:
-
-$$ slot = part \cdot S + ((h \oplus (C \cdot p)) \cdot C) \mod S $$
-
-## Compared to PTHash
-
-PTRHash extends it in a few ways:
-
--   **8-bit pilots:** Instead of allowing pilots to take any integer value, we
-    restrict them to `[0, 256)` and store them as `Vec<u8>` directly, instead of
-    requiring a compact or dictionary encoding.
--   **Evicting:** To get all pilots to be small, we use *evictions*, similar
-    to *cuckoo hashing*: Whenever we cannot find a collision-free pilot for a
-    bucket, we find the pilot with the fewest collisions and *evict* all
-    colliding buckets, which are pushed on a queue after which they will search
-    for a new pilot.
--   **Partitioning:** To speed up construction, we partition all keys/hashes
-    into parts such that each part contains $S=2^k$ *slots*, which we choose to
-    be roughly the size of the L1 cache. This significantly speeds up
-    construction since all reads of the `taken` bitvector are now very local.
-    
-    This brings the benefit that the only global memory needed is to store the
-    hashes for each part. The sorting, bucketing, and slot filling is per-part
-    and needs comparatively little memory.
--   **Remap encoding:** We use a partitioned Elias-Fano encoding that encoding
-    chunks of `44` integers into a single cacheline. This takes `~30%~ more
-    space for remapping, but replaces the three reads needed by (global)
-    Elias-Fano encoding by
-    a single read.
-
 ## Usage
+
+Below, we use `PtrHashParams::default()` for a reasonable tradeoff between size
+(2.4 bits/key) and speed.
+Slightly smaller size is possible using `PtrHashParams::default_compact()`,
+at the cost of significantly slower construction time (2x) and lowered reliability.
+
+There is also `PtrHashParams::default_fast()`, which takes 25% more space but
+can be almost 2x faster when querying integer keys in tight loops. Nevertheless,
+for large inputs, maximum query throughput is achieved with `index_stream` with default parameters.
 
 ```rust
 use ptr_hash::{PtrHash, PtrHashParams};
@@ -109,23 +70,61 @@ let mphf = <PtrHash>::new(&keys, PtrHashParams::default());
 
 // Get the minimal index of a key.
 let key = 0;
-let idx = mphf.index_minimal(&key);
+let idx = mphf.index(&key);
 assert!(idx < n);
 
-// Get the non-minimal index of a key. Slightly faster.
-let _idx = mphf.index(&key);
+// Get the non-minimal index of a key. Slightly faster, but can be >=n.
+let _idx = mphf.index_no_remap(&key);
 
 // An iterator over the indices of the keys.
 // 32: number of iterations ahead to prefetch.
 // true: remap to a minimal key in [0, n).
-let indices = mphf.index_stream::<32, true>(&keys);
+let indices = mphf.index_stream::<32, true, _>(&keys);
 assert_eq!(indices.sum::<usize>(), (n * (n - 1)) / 2);
 
 // Test that all items map to different indices
 let mut taken = vec![false; n];
 for key in keys {
-    let idx = mphf.index_minimal(&key);
+    let idx = mphf.index(&key);
     assert!(!taken[idx]);
     taken[idx] = true;
 }
 ```
+
+## Epserde
+
+The `PtrHash` datastructure can be (de)serialized to/from disk using
+[epserde](https://github.com/vigna/epserde-rs) when the `epserde` feature is set.
+This also allows convenient deserialization using `mmap`.
+See [examples/epserde.rs](examples/epserde.rs) for an example.
+
+## Sharding
+
+In order to build PtrHash on large sets of keys that do not fit in ram, the keys
+can be sharded and constructed one shard at a time.
+See `fn sharding()` in [examples/evals.rs](examples/epserde.rs) for an example.
+
+## Compared to PTHash
+
+PtrHash extends PTHash in a few ways:
+
+-   **8-bit pilots:** Instead of allowing pilots to take any integer value, we
+    restrict them to `[0, 256)` and store them as `Vec<u8>` directly.
+    This avoids the need for a compact or dictionary encoding.
+-   **Evicting:** To get all pilots to be small, we use *evictions*, similar
+    to *cuckoo hashing*: Whenever we cannot find a collision-free pilot for a
+    bucket, we find the pilot with the fewest collisions and *evict* all
+    colliding buckets, which are pushed on a queue after which they will search
+    for a new pilot.
+-   **Partitioning:** To speed up construction, we partition all keys/hashes
+    into parts such that each part contains `S=2^k` *slots*.
+    This significantly speeds up
+    construction since all reads of the `taken` bitvector are now very local.
+    
+    This brings the benefit that the only global memory needed is to store the
+    hashes for each part. The sorting, bucketing, and slot filling is per-part
+    and needs comparatively little memory.
+-   **Remap encoding:** We use the `CachelineEF` partitioned Elias-Fano encoding that stores
+    chunks of `44` integers into a single cacheline. This takes `~30%` more
+    space for remapping, but replaces the three reads needed by (global)
+    Elias-Fano encoding by a single read.
