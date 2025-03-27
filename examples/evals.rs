@@ -280,14 +280,14 @@ fn remap() {
         let q1_phf = time_query_f(keys, || {
             let mut sum = 0;
             for key in keys {
-                sum += ph.index(key);
+                sum += ph.index_no_remap(key);
             }
             sum
         });
         let q1_mphf = time_query_f(keys, || {
             let mut sum = 0;
             for key in keys {
-                sum += ph.index_minimal(key);
+                sum += ph.index(key);
             }
             sum
         });
@@ -295,7 +295,7 @@ fn remap() {
             let mut sum = 0;
             for key in keys {
                 black_box(());
-                sum += ph.index(key);
+                sum += ph.index_no_remap(key);
             }
             sum
         });
@@ -303,7 +303,7 @@ fn remap() {
             let mut sum = 0;
             for key in keys {
                 black_box(());
-                sum += ph.index_minimal(key);
+                sum += ph.index(key);
             }
             sum
         });
@@ -432,7 +432,7 @@ fn query_batching() {
         let q_phf = time_query_f(keys, || {
             let mut sum = 0;
             for key in keys {
-                sum += ph.index(key);
+                sum += ph.index_no_remap(key);
             }
             sum
         });
@@ -450,7 +450,7 @@ fn query_batching() {
             let mut sum = 0;
             for key in keys {
                 black_box(());
-                sum += ph.index(key);
+                sum += ph.index_no_remap(key);
             }
             sum
         });
@@ -620,7 +620,7 @@ fn query_throughput() {
                 let mut sum = 0;
                 for key in keys {
                     black_box(());
-                    sum += ph.index(key);
+                    sum += ph.index_no_remap(key);
                 }
                 sum
             });
@@ -628,7 +628,7 @@ fn query_throughput() {
                 let mut sum = 0;
                 for key in keys {
                     black_box(());
-                    sum += ph.index_minimal(key);
+                    sum += ph.index(key);
                 }
                 sum
             });
@@ -647,14 +647,14 @@ fn query_throughput() {
             let q_phf = time_query_parallel_f(threads, keys, |keys| {
                 let mut sum = 0;
                 for key in keys {
-                    sum += ph.index(key);
+                    sum += ph.index_no_remap(key);
                 }
                 sum
             });
             let q_mphf = time_query_parallel_f(threads, keys, |keys| {
                 let mut sum = 0;
                 for key in keys {
-                    sum += ph.index_minimal(key);
+                    sum += ph.index(key);
                 }
                 sum
             });
@@ -733,7 +733,7 @@ fn string_queries() {
             let mut sum = 0;
             for key in keys {
                 black_box(());
-                sum += ph.index_minimal(key);
+                sum += ph.index(key);
             }
             sum
         });
@@ -750,7 +750,7 @@ fn string_queries() {
         let q_mphf = time_query_f(keys, || {
             let mut sum = 0;
             for key in keys {
-                sum += ph.index_minimal(key);
+                sum += ph.index(key);
             }
             sum
         });

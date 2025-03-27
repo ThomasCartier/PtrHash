@@ -19,7 +19,7 @@ fn construct() {
         let ptr_hash = <PtrHash>::new(&keys, Default::default());
         let mut done = bitvec![0; n];
         for key in keys {
-            let idx = ptr_hash.index_minimal(&key);
+            let idx = ptr_hash.index(&key);
             assert!(!done[idx]);
             done.set(idx, true);
         }
@@ -72,7 +72,7 @@ fn in_memory_sharding() {
     eprintln!("Checking duplicates...");
     let mut done = bitvec![0; n];
     for key in range {
-        let idx = ptr_hash.index_minimal(&key);
+        let idx = ptr_hash.index(&key);
         assert!(!done[idx]);
         done.set(idx, true);
     }
@@ -95,7 +95,7 @@ fn on_disk_sharding() {
     eprintln!("Checking duplicates...");
     let mut done = bitvec![0; n];
     for key in range {
-        let idx = ptr_hash.index_minimal(&key);
+        let idx = ptr_hash.index(&key);
         assert!(!done[idx]);
         done.set(idx, true);
     }
@@ -125,7 +125,7 @@ fn many_keys_memory() {
     eprintln!("Checking duplicates...");
     let mut done = bitvec![0; n];
     for key in 0..n_query {
-        let idx = ptr_hash.index_minimal(&key);
+        let idx = ptr_hash.index(&key);
         assert!(!done[idx]);
         done.set(idx, true);
     }
@@ -155,7 +155,7 @@ fn many_keys_disk() {
     eprintln!("Checking duplicates...");
     let mut done = bitvec![0; n];
     for key in 0..n_query {
-        let idx = ptr_hash.index_minimal(&key);
+        let idx = ptr_hash.index(&key);
         assert!(!done[idx]);
         done.set(idx, true);
     }

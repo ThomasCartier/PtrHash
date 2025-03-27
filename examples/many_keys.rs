@@ -30,7 +30,7 @@ fn main() {
     eprintln!("Checking duplicates...");
     let mut done = bitvec![0; n];
     for key in 0..n_query {
-        let idx = ptr_hash.index_minimal(&key);
+        let idx = ptr_hash.index(&key);
         assert!(!done[idx]);
         done.set(idx, true);
     }

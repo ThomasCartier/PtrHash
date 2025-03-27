@@ -649,10 +649,10 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         self.slots
     }
 
-    /// Get a non-minimal index of the given key.
-    /// Use `index_minimal` to get a key in `[0, n)`.
+    /// Get a non-minimal index of the given key, in `[0, n/alpha)`.
+    /// Use `index` to get a key in `[0, n)`.
     #[inline]
-    pub fn index(&self, key: &Key) -> usize {
+    pub fn index_no_remap(&self, key: &Key) -> usize {
         let hx = self.hash_key(key);
         let b = self.bucket(hx);
         let pilot = self.pilots.as_ref().index(b);
@@ -669,10 +669,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     }
 
     /// Get the index for `key` in `[0, n)`.
-    ///
-    /// Requires that the remap parameter is set to true.
     #[inline]
-    pub fn index_minimal(&self, key: &Key) -> usize {
+    pub fn index(&self, key: &Key) -> usize {
         let hx = self.hash_key(key);
         let b = self.bucket(hx);
         let p = self.pilots.as_ref().index(b);

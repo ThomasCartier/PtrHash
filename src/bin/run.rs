@@ -266,7 +266,7 @@ fn bench_hashers<BF: BucketFn>(total: usize, params: &PtrHashParams<BF>, keys: &
         type PH<Key, H, BF> = PtrHash<Key, BF, CachelineEfVec, H, Vec<u8>>;
         let pt = PH::<Key, H, BF>::new_random(keys.len(), *params);
 
-        let query = bench_index(loops, keys, |key| pt.index(key));
+        let query = bench_index(loops, keys, |key| pt.index_no_remap(key));
         eprintln!("  sequential: {query:>4.1}");
         let query = time(loops, keys, || {
             pt.index_stream::<64, false, _>(keys).sum::<usize>()
@@ -323,14 +323,14 @@ fn benchmark_queries<
     eprintln!("BENCHMARKING A={A}\t loops {loops}");
 
     if A == 1 {
-        let query = bench_index(loops, keys, |key| pt.index(key));
+        let query = bench_index(loops, keys, |key| pt.index_no_remap(key));
         eprintln!(" ( 1  / / )  : {query:>5.2}ns");
-        let query = bench_index(loops, keys, |key| pt.index_minimal(key));
+        let query = bench_index(loops, keys, |key| pt.index(key));
         eprintln!(" ( 1  /r/ )  : {query:>5.2}ns");
         let query = time(loops, keys, || {
             let mut sum = 0;
             for key in keys {
-                sum += pt.index(key);
+                sum += pt.index_no_remap(key);
             }
             sum
         });
@@ -338,7 +338,7 @@ fn benchmark_queries<
         let query = time(loops, keys, || {
             let mut sum = 0;
             for key in keys {
-                sum += pt.index_minimal(key);
+                sum += pt.index(key);
             }
             sum
         });
