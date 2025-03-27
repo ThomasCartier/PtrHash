@@ -1,3 +1,9 @@
+//! The `Packed` and `MutPacked` traits are used for the underlying storage of
+//! the remap vector.
+//!
+//! This is implemented for `Vec<u8|u16|u32|u64>`, `CachelineEfVec`, and `EliasFano` from `sucds`.
+//! `Packed` is also implemented for respective non-owning (slice) types to support epserde.
+
 use sucds::mii_sequences::EliasFanoBuilder;
 
 use cacheline_ef::{CachelineEf, CachelineEfVec};

@@ -1,3 +1,10 @@
+//! Various ''bucket functions'' are implemented here.
+//!
+//! These functions map a uniform `u64` hash to a new `u64`, to skew the distribution of bucket sizes.
+//!
+//! By default, `CubicEps` is used. `Linear` is simplest and can be faster at the cost of requiring more space.
+//! The remaining ones are only kept for benchmarking.
+
 use mem_dbg::MemSize;
 
 use crate::util::mul_high;
@@ -10,6 +17,7 @@ pub trait BucketFn: Clone + Copy + Sync + Debug {
     fn call(&self, x: u64) -> u64;
 }
 
+/// The function simply returns `x` itself.
 #[derive(Clone, Copy, Debug, MemSize, Default)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[cfg_attr(feature = "epserde", repr(C))]
@@ -23,7 +31,7 @@ impl BucketFn for Linear {
     }
 }
 
-/// A 2-piece-wise linear function
+/// A 2-piece-wise linear function, as used in FCH and PTHash.
 ///
 /// |              .
 /// |             .
@@ -101,6 +109,7 @@ impl BucketFn for Skewed {
     }
 }
 
+/// The optimal bucket function of PHOBIC, with a variable `eps`.
 #[derive(Clone, Copy, Debug, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[cfg_attr(feature = "epserde", repr(C))]
@@ -121,6 +130,7 @@ impl BucketFn for Optimal {
     }
 }
 
+/// `x*x`
 #[derive(Clone, Copy, Debug, MemSize, Default)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[cfg_attr(feature = "epserde", repr(C))]
@@ -133,6 +143,7 @@ impl BucketFn for Square {
     }
 }
 
+/// `x*x * 255/256 + x/256`
 #[derive(Clone, Copy, Debug, MemSize, Default)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[cfg_attr(feature = "epserde", repr(C))]
@@ -145,6 +156,7 @@ impl BucketFn for SquareEps {
     }
 }
 
+/// `x * x * (1 + x)/2`
 #[derive(Clone, Copy, Debug, MemSize, Default)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[cfg_attr(feature = "epserde", repr(C))]
@@ -158,6 +170,7 @@ impl BucketFn for Cubic {
     }
 }
 
+/// `x * x * (1 + x)/2 * 255/256 + x/256`
 #[derive(Clone, Copy, Debug, MemSize, Default)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[cfg_attr(feature = "epserde", repr(C))]
