@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use rdst::RadixSort;
 
 /// Prefetch the given cacheline into L1 cache.
-pub fn prefetch_index<T>(s: &[T], index: usize) {
+pub(crate) fn prefetch_index<T>(s: &[T], index: usize) {
     let ptr = unsafe { s.as_ptr().add(index) as *const u64 };
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -28,7 +28,7 @@ pub fn prefetch_index<T>(s: &[T], index: usize) {
     }
 }
 
-pub fn mul_high(a: u64, b: u64) -> u64 {
+pub(crate) fn mul_high(a: u64, b: u64) -> u64 {
     ((a as u128 * b as u128) >> 64) as u64
 }
 
@@ -85,10 +85,4 @@ pub fn generate_string_keys(n: usize) -> Vec<Vec<u8>> {
         .collect();
     log_duration("generatekeys", start);
     keys
-}
-
-pub fn time<T>(mut f: impl FnMut() -> T) -> (T, f64) {
-    let start = Instant::now();
-    let t = f();
-    (t, start.elapsed().as_secs_f64())
 }

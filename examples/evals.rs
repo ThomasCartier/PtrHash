@@ -8,7 +8,7 @@ use ptr_hash::{
     hash::{FxHash, Hasher, Murmur2_64, Xx128, Xx64},
     pack::{EliasFano, MutPacked},
     stats::BucketStats,
-    util::{self, generate_keys, generate_string_keys, time},
+    util::{generate_keys, generate_string_keys},
     KeyT, PtrHash, PtrHashParams, Sharding,
 };
 use rand::{thread_rng, Rng, RngCore};
@@ -194,7 +194,7 @@ fn size() {
         };
         eprintln!("Running {alpha} {lambda} {bucket_fn:?}");
         // Construct on 6 threads.
-        let (ph, c6) = util::time(|| <MyPtrHash<_, R>>::try_new(&keys, params));
+        let (ph, c6) = time(|| <MyPtrHash<_, R>>::try_new(&keys, params));
         let ph = ph.as_ref();
 
         // Space usage.
@@ -270,7 +270,7 @@ fn remap() {
         };
 
         // Construct on 6 threads.
-        let (ph, c6) = util::time(|| <MyPtrHash<_, R>>::new(&keys, params));
+        let (ph, c6) = time(|| <MyPtrHash<_, R>>::new(&keys, params));
 
         // Space usage.
         let (pilots, remap) = ph.bits_per_element();
@@ -410,7 +410,7 @@ fn query_batching() {
         type MyPtrHash<BF> = PtrHash<u64, BF, Vec<u32>, FxHash, Vec<u8>>;
         eprintln!("Building {params:?}");
         // Construct on 6 threads.
-        let (ph, c6) = util::time(|| MyPtrHash::new(&keys, params));
+        let (ph, c6) = time(|| MyPtrHash::new(&keys, params));
 
         // Space usage.
         let (pilots, remap) = ph.bits_per_element();
@@ -594,7 +594,7 @@ fn query_throughput() {
         type MyPtrHash<BF, R> = PtrHash<u64, BF, R, FxHash, Vec<u8>>;
         eprintln!("Building {params:?}");
         // Construct on 6 threads.
-        let (ph, c6) = util::time(|| MyPtrHash::<_, R>::new(&keys, params));
+        let (ph, c6) = time(|| MyPtrHash::<_, R>::new(&keys, params));
 
         // Space usage.
         let (pilots, remap) = ph.bits_per_element();
@@ -708,7 +708,7 @@ fn string_queries() {
         type MyPtrHash<BF, R, K, H> = PtrHash<K, BF, R, H, Vec<u8>>;
         eprintln!("Building {params:?}");
         // Construct on 6 threads.
-        let (ph, c6) = util::time(|| MyPtrHash::<_, R, K, H>::new(&keys, params));
+        let (ph, c6) = time(|| MyPtrHash::<_, R, K, H>::new(&keys, params));
 
         // Space usage.
         let (pilots, remap) = ph.bits_per_element();
@@ -876,4 +876,10 @@ fn string_queries() {
         }
     }
     write(&results, "data/string_queries.json");
+}
+
+fn time<T>(mut f: impl FnMut() -> T) -> (T, f64) {
+    let start = Instant::now();
+    let t = f();
+    (t, start.elapsed().as_secs_f64())
 }
