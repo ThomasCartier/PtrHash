@@ -8,7 +8,7 @@ use clap::builder::PossibleValue;
 
 use super::*;
 
-/// Select the sharding method to use.
+/// The sharding method to use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[cfg_attr(feature = "epserde", repr(C))]

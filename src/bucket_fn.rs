@@ -1,4 +1,4 @@
-//! Various ''bucket functions'' are implemented here.
+//! Various "bucket functions" are implemented here.
 //!
 //! These functions map a uniform `u64` hash to a new `u64`, to skew the distribution of bucket sizes.
 //!

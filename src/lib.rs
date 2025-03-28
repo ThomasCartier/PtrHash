@@ -51,6 +51,17 @@
 //!     taken[idx] = true;
 //! }
 //! ```
+//!
+//! ## Partitioning
+//!
+//! By default, PtrHash partitions the keys into multiple parts.
+//! This speeds up construction in two ways:
+//! - smaller parts have better cache locality, and
+//! - parts can be constructed in parallel.
+//!
+//! However, at query time there is a small overhead to compute the part of each key.
+//! To achieve slightly faster queries, set [`PtrHashParams::single_part`] to `true`,
+//! and then use [`PtrHash::index_single_part()`] instead of [`PtrHash::index()`].
 
 /// Customizable Hasher trait.
 pub mod hash;
@@ -404,7 +415,8 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             parts_per_shard = parts / shards;
             slots_per_part = (keys_per_part as f64 / params.alpha) as usize;
             slots_total = parts * slots_per_part;
-            buckets_per_part = (keys_per_part as f64 / params.lambda).ceil() as usize;
+            // Add a few extra buckets to avoid collisions for small n.
+            buckets_per_part = (keys_per_part as f64 / params.lambda).ceil() as usize + 3;
             buckets_total = parts * buckets_per_part;
 
             if parts == 1 {
@@ -418,8 +430,8 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             // https://math.stackexchange.com/a/89147/91741:
             let stddevs_away = ((parts as f64).ln() * 2.).sqrt();
             let exp_max = exp_keys_per_part + stddev * stddevs_away;
-            // Add a buffer of 1.5 stddev.
-            let buf_max = exp_max + 1.5 * stddev;
+            // Add a buffer of 2 stddev.
+            let buf_max = exp_max + 2.0 * stddev;
 
             if buf_max < slots_per_part as f64 {
                 eprintln!("Using slots per part: {slots_per_part}, expected keys {}, expected max keys: {} ({stddevs_away} σ)", exp_keys_per_part as usize, exp_max as usize);
