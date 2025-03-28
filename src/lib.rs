@@ -115,6 +115,11 @@ pub struct PtrHashParams<BF> {
 
     /// Print bucket size and pilot stats after construction.
     pub print_stats: bool,
+
+    /// Force using a single part, so that [`PtrHash::index_single_part()`] can be used.
+    ///
+    /// This makes construction up to 5x slower, but can make queries up to 30% faster.
+    pub single_part: bool,
 }
 
 impl PtrHashParams<Linear> {
@@ -133,6 +138,7 @@ impl PtrHashParams<Linear> {
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
+            single_part: false,
         }
     }
 }
@@ -148,6 +154,7 @@ impl PtrHashParams<SquareEps> {
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
+            single_part: false,
         }
     }
 }
@@ -168,6 +175,7 @@ impl PtrHashParams<CubicEps> {
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
+            single_part: false,
         }
     }
 
@@ -187,6 +195,7 @@ impl PtrHashParams<CubicEps> {
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
+            single_part: false,
         }
     }
 }
@@ -380,6 +389,9 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
 
         // Avoid overly small parts.
         parts = (n / 1024).next_power_of_two().next_multiple_of(shards);
+        if params.single_part {
+            parts = 1;
+        }
 
         // Compute the optimal number of parts and slots per part.
         // - Smaller parts have better cache locality and hence faster construction.
@@ -637,7 +649,12 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         let hx = self.hash_key(key);
         let b = self.bucket_in_part(hx.high());
         let pilot = self.pilots.as_ref().index(b);
-        self.slot_in_part(hx, pilot)
+        let slot = self.slot_in_part(hx, pilot);
+        if slot < self.n {
+            slot
+        } else {
+            self.remap.index(slot - self.n) as usize
+        }
     }
 
     /// Get the index for `key` in `[0, n)`.

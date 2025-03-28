@@ -61,6 +61,7 @@ const PARAMS_FAST: PtrHashParams<Linear> = PtrHashParams {
     sharding: Sharding::None,
     remap: true,
     print_stats: false,
+    single_part: false,
 };
 
 #[allow(unused)]
@@ -73,6 +74,7 @@ const PARAMS_DEFAULT: PtrHashParams<CubicEps> = PtrHashParams {
     sharding: Sharding::None,
     remap: true,
     print_stats: false,
+    single_part: false,
 };
 
 const PARAMS_COMPACT: PtrHashParams<CubicEps> = PtrHashParams {
@@ -84,6 +86,7 @@ const PARAMS_COMPACT: PtrHashParams<CubicEps> = PtrHashParams {
     sharding: Sharding::None,
     remap: true,
     print_stats: false,
+    single_part: false,
 };
 
 #[derive(Debug, Serialize, Default)]
