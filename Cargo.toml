@@ -39,28 +39,30 @@ rustc-hash = "2.1.1"
 sucds = "0.8.0"
 tempfile = "3.8.1"
 fastrand = "2.0.1"
+serde = { version = "1.0.215", features = ["derive"] }
+mem_dbg = "0.3.0"
 
 cacheline-ef = { git = "https://github.com/ragnargrootkoerkamp/cacheline-ef" }
 
 # Default included hash functions
-cityhash-102-rs = "0.1.0"
-fastmurmur3 = "0.2.0"
 fxhash = "0.2.1"
-hashers =  "1.0.1"
-highway =  "1.1.0"
-metrohash =  "1.0.6"
-murmur2 = "0.1.0"
-murmur3 =  "0.5.2"
-wyhash =  "0.5.0"
 xxhash-rust = {version = "0.8.7", features = ["xxh64", "xxh3"]}
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.133"
-mem_dbg = "0.3.0"
+
+cityhash-102-rs = {version="0.1.0", optional=true}
+fastmurmur3 = {version="0.2.0", optional=true}
+hashers =  {version="1.0.1", optional=true}
+highway =  {version="1.1.0", optional=true}
+metrohash =  {version="1.0.6", optional=true}
+murmur2 = {version="0.1.0", optional=true}
+murmur3 =  {version="0.5.2", optional=true}
+wyhash =  {version="0.5.0", optional=true}
 
 [features]
 epserde = ["dep:epserde", "dep:epserde-derive", "cacheline-ef/epserde"]
 # Enable iter_array_chunks unstable feature for iter_batch_exact, which is only for benchmarking.
 unstable = []
+# Allow additional hash functions, on top of just FxHash and XxHash.
+hashers = ["dep:cityhash-102-rs", "dep:fastmurmur3", "dep:hashers", "dep:highway", "dep:metrohash", "dep:murmur2", "dep:murmur3", "dep:wyhash"]
 default = ["epserde"]
 
 [dev-dependencies]

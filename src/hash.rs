@@ -1,13 +1,22 @@
+//! Implementations of the `Hash` trait that abstracts over 64 and 128-bit hashes.
 use mem_dbg::MemSize;
 
 use crate::KeyT;
 use std::fmt::Debug;
 
-/// A wrapper trait that supports both 64 and 128bit hashes.
+/// The `Hasher` trait returns a 64 or 128-bit `Hash`. From this, two `u64` values are extracted.
+///
+/// When 64-bit hashes are enough, we simply return the same hash (the `u64`
+/// `Self` value) as the low and high part.
+///
+/// When 128-bit hashes are needed, the two functions return the low/high half of bits.
+///
+/// Our method never needs the full hash value, and instead uses the two hashes
+/// in different places to extract sufficient entropy.
 pub trait Hash: Copy + Debug + Default + Send + Sync + Eq + rdst::RadixKey {
-    /// Returns the low 64bits.
+    /// Returns the low 64bits of the hash.
     fn low(&self) -> u64;
-    /// Returns the high 64bits.
+    /// Returns the high 64bits of the hash.
     fn high(&self) -> u64;
 }
 
@@ -29,6 +38,7 @@ impl Hash for u128 {
     }
 }
 
+/// Wrapper trait for various hash functions.
 pub trait Hasher<Key: ?Sized>: Clone + Sync {
     type H: Hash;
     fn hash(x: &Key, seed: u64) -> Self::H;
@@ -54,52 +64,67 @@ pub struct NoHash;
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone, MemSize)]
 pub struct FxHash;
+/// Default hash function for strings.
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
+#[derive(Clone, MemSize)]
+pub struct Xx64;
+/// Fast good 128bit hash, when hashing >>10^9 keys.
+#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
+#[derive(Clone)]
+pub struct Xx128;
+
 /// Very fast weak 64bit hash with more quality than FxHash.
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Murmur2_64;
 /// Fast weak 128bit hash for integers.
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct FastMurmur3_128;
 
 // C. Additional higher quality but slower hashers.
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Murmur3_128;
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Highway64;
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Highway128;
 /// Fast good 64bit hash.
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct City64;
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct City128;
 /// Fast good 64bit hash.
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Wy64;
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone, MemSize)]
-pub struct Xx64;
-/// Fast good 128bit hash (but fails at 10^11 keys).
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Xx128;
+
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Metro64;
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Metro128;
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Spooky64;
+#[cfg(feature = "hashers")]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct Spooky128;
@@ -133,60 +158,9 @@ impl<Key: KeyT> Hasher<Key> for FxHash {
         fxhash::hash64(x)
     }
 }
-impl<Key> Hasher<Key> for Murmur2_64 {
-    type H = u64;
-    fn hash(x: &Key, seed: u64) -> u64 {
-        murmur2::murmur64a(to_bytes(x), seed)
-    }
-}
-impl<Key> Hasher<Key> for FastMurmur3_128 {
-    type H = u128;
-    fn hash(x: &Key, seed: u64) -> u128 {
-        fastmurmur3::murmur3_x64_128(to_bytes(x), seed)
-    }
-}
 
-// C. Further high quality hash functions.
-impl<Key> Hasher<Key> for Murmur3_128 {
-    type H = u128;
-    fn hash(x: &Key, seed: u64) -> u128 {
-        let mut bytes = to_bytes(x);
-        murmur3::murmur3_x64_128(&mut bytes, seed as u32).unwrap()
-    }
-}
-impl<Key> Hasher<Key> for Highway64 {
-    type H = u64;
-    fn hash(x: &Key, _seed: u64) -> u64 {
-        use highway::HighwayHash;
-        highway::HighwayHasher::default().hash64(to_bytes(x))
-    }
-}
-impl<Key> Hasher<Key> for Highway128 {
-    type H = u128;
-    fn hash(x: &Key, _seed: u64) -> u128 {
-        use highway::HighwayHash;
-        let words = highway::HighwayHasher::default().hash128(to_bytes(x));
-        unsafe { std::mem::transmute(words) }
-    }
-}
-impl<Key> Hasher<Key> for City64 {
-    type H = u64;
-    fn hash(x: &Key, _seed: u64) -> u64 {
-        cityhash_102_rs::city_hash_64(to_bytes(x))
-    }
-}
-impl<Key> Hasher<Key> for City128 {
-    type H = u128;
-    fn hash(x: &Key, seed: u64) -> u128 {
-        cityhash_102_rs::city_hash_128_seed(to_bytes(x), seed as _)
-    }
-}
-impl<Key> Hasher<Key> for Wy64 {
-    type H = u64;
-    fn hash(x: &Key, seed: u64) -> u64 {
-        wyhash::wyhash(to_bytes(x), seed)
-    }
-}
+// XX64
+
 impl Hasher<u64> for Xx64 {
     type H = u64;
     #[inline(always)]
@@ -237,6 +211,9 @@ impl Hasher<Vec<u8>> for Xx64 {
         xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(x.as_slice()), seed)
     }
 }
+
+// XX128
+
 impl Hasher<u64> for Xx128 {
     type H = u128;
     #[inline(always)]
@@ -287,6 +264,72 @@ impl Hasher<Vec<u8>> for Xx128 {
         xxhash_rust::xxh3::xxh3_128_with_seed(to_bytes(x.as_slice()), seed)
     }
 }
+
+// Further hashes
+
+#[cfg(feature = "hashers")]
+impl<Key> Hasher<Key> for Murmur2_64 {
+    type H = u64;
+    fn hash(x: &Key, seed: u64) -> u64 {
+        murmur2::murmur64a(to_bytes(x), seed)
+    }
+}
+#[cfg(feature = "hashers")]
+impl<Key> Hasher<Key> for FastMurmur3_128 {
+    type H = u128;
+    fn hash(x: &Key, seed: u64) -> u128 {
+        fastmurmur3::murmur3_x64_128(to_bytes(x), seed)
+    }
+}
+
+// C. Further high quality hash functions.
+#[cfg(feature = "hashers")]
+impl<Key> Hasher<Key> for Murmur3_128 {
+    type H = u128;
+    fn hash(x: &Key, seed: u64) -> u128 {
+        let mut bytes = to_bytes(x);
+        murmur3::murmur3_x64_128(&mut bytes, seed as u32).unwrap()
+    }
+}
+#[cfg(feature = "hashers")]
+impl<Key> Hasher<Key> for Highway64 {
+    type H = u64;
+    fn hash(x: &Key, _seed: u64) -> u64 {
+        use highway::HighwayHash;
+        highway::HighwayHasher::default().hash64(to_bytes(x))
+    }
+}
+#[cfg(feature = "hashers")]
+impl<Key> Hasher<Key> for Highway128 {
+    type H = u128;
+    fn hash(x: &Key, _seed: u64) -> u128 {
+        use highway::HighwayHash;
+        let words = highway::HighwayHasher::default().hash128(to_bytes(x));
+        unsafe { std::mem::transmute(words) }
+    }
+}
+#[cfg(feature = "hashers")]
+impl<Key> Hasher<Key> for City64 {
+    type H = u64;
+    fn hash(x: &Key, _seed: u64) -> u64 {
+        cityhash_102_rs::city_hash_64(to_bytes(x))
+    }
+}
+#[cfg(feature = "hashers")]
+impl<Key> Hasher<Key> for City128 {
+    type H = u128;
+    fn hash(x: &Key, seed: u64) -> u128 {
+        cityhash_102_rs::city_hash_128_seed(to_bytes(x), seed as _)
+    }
+}
+#[cfg(feature = "hashers")]
+impl<Key> Hasher<Key> for Wy64 {
+    type H = u64;
+    fn hash(x: &Key, seed: u64) -> u64 {
+        wyhash::wyhash(to_bytes(x), seed)
+    }
+}
+#[cfg(feature = "hashers")]
 impl<Key> Hasher<Key> for Metro64 {
     type H = u64;
     fn hash(x: &Key, seed: u64) -> u64 {
@@ -296,6 +339,7 @@ impl<Key> Hasher<Key> for Metro64 {
         hasher.finish()
     }
 }
+#[cfg(feature = "hashers")]
 impl<Key> Hasher<Key> for Metro128 {
     type H = u128;
     fn hash(x: &Key, seed: u64) -> u128 {
@@ -306,6 +350,7 @@ impl<Key> Hasher<Key> for Metro128 {
         (h as u128) << 64 | l as u128
     }
 }
+#[cfg(feature = "hashers")]
 impl<Key> Hasher<Key> for Spooky64 {
     type H = u64;
     fn hash(x: &Key, seed: u64) -> u64 {
@@ -315,6 +360,7 @@ impl<Key> Hasher<Key> for Spooky64 {
         hasher.finish()
     }
 }
+#[cfg(feature = "hashers")]
 impl<Key> Hasher<Key> for Spooky128 {
     type H = u128;
     fn hash(x: &Key, seed: u64) -> u128 {

@@ -5,7 +5,7 @@ use std::{cmp::min, collections::HashMap, hint::black_box, time::Instant};
 use cacheline_ef::CachelineEfVec;
 use ptr_hash::{
     bucket_fn::{BucketFn, CubicEps, Linear, Optimal, Skewed, Square},
-    hash::{FxHash, Hasher, Murmur2_64, Xx128, Xx64},
+    hash::{FxHash, Hasher, Xx128, Xx64},
     pack::{EliasFano, MutPacked},
     stats::BucketStats,
     util::{generate_keys, generate_string_keys},
@@ -372,7 +372,7 @@ fn sharding(sharding: Sharding, path: &str) {
     let keys = range.into_par_iter();
     let start = Instant::now();
     let bucket_fn = CubicEps;
-    let ptr_hash = PtrHash::<_, _, CachelineEfVec, Murmur2_64>::new_from_par_iter(
+    let ptr_hash = PtrHash::<_, _, CachelineEfVec, Xx64>::new_from_par_iter(
         n,
         keys,
         PtrHashParams {
