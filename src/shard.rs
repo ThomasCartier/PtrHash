@@ -22,9 +22,9 @@ pub enum Sharding {
     /// Process all hashes as a single Vec in memory.
     #[default]
     None,
-    /// Repeatedly hash all elements, and each time only process a chunk of 2^32 of them.
+    /// Repeatedly hash all elements, and each time only process a chunk of 2^31 of them.
     Memory,
-    /// Hash everything once, write shards of up to 2^32 hashes to disk.
+    /// Hash everything once, write shards of up to 2^31 hashes to disk.
     Disk,
     /// Hybrid that repeatedly fills the given amount (in bytes) of disk space with hashes.
     Hybrid(usize),

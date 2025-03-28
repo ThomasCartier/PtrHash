@@ -2,43 +2,55 @@
 // - Specialization for instances with a single part.
 // - Use trace instead of eprintln.
 #![cfg_attr(feature = "unstable", feature(iter_array_chunks))]
-//! PTRHash is a minimal perfect hash function.
+//! # PtrHash: Minimal Perfect Hashing at RAM Throughput
+//!
+//! See the GitHub [readme](https://github.com/ragnargrootkoerkamp/ptrhash)
+//! or paper ([arXiv](https://arxiv.org/abs/2502.15539), [blog version](https://curiouscoding.nl/posts/ptrhash/))
+//! for details on the algorithm and performance.
 //!
 //! Usage example:
 //! ```rust
 //! use ptr_hash::{PtrHash, PtrHashParams};
 //!
 //! // Generate some random keys.
-//! let n = 1_000_000_000;
+//! let n = 1_000_000;
 //! let keys = ptr_hash::util::generate_keys(n);
 //!
 //! // Build the datastructure.
 //! let mphf = <PtrHash>::new(&keys, PtrHashParams::default());
 //!
-//! // Get the minimal index of a key.
+//! // Get the index of a key.
 //! let key = 0;
-//! let idx = mphf.index_minimal(&key);
+//! let idx = mphf.index(&key);
 //! assert!(idx < n);
 //!
-//! // Get the non-minimal index of a key. Slightly faster.
-//! let _idx = mphf.index(&key);
+//! // Get the non-minimal index of a key.
+//! // Can be slightly faster returns keys up to `n/alpha ~ 1.01*n`.
+//! let _idx = mphf.index_no_remap(&key);
 //!
 //! // An iterator over the indices of the keys.
 //! // 32: number of iterations ahead to prefetch.
 //! // true: remap to a minimal key in [0, n).
-//! let indices = mphf.index_stream::<32, true>(&keys);
+//! // _: placeholder to infer the type of keys being iterated.
+//! let indices = mphf.index_stream::<32, true, _>(&keys);
 //! assert_eq!(indices.sum::<usize>(), (n * (n - 1)) / 2);
+//!
+//! // Query a batch of keys.
+//! let keys = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+//! let mut indices = mphf.index_batch::<16, true, _>(keys);
+//! indices.sort();
+//! for i in 0..indices.len()-1 {
+//!     assert!(indices[i] != indices[i+1]);
+//! }
 //!
 //! // Test that all items map to different indices
 //! let mut taken = vec![false; n];
 //! for key in keys {
-//!     let idx = mphf.index_minimal(&key);
+//!     let idx = mphf.index(&key);
 //!     assert!(!taken[idx]);
 //!     taken[idx] = true;
 //! }
 //! ```
-//#![cfg_attr(target_arch = "aarch64", feature(stdsimd))]
-#![allow(clippy::needless_range_loop)]
 
 /// Customizable Hasher trait.
 pub mod hash;
@@ -53,16 +65,17 @@ mod build;
 mod reduce;
 mod shard;
 mod sort_buckets;
+#[doc(hidden)]
 pub mod stats;
 #[cfg(test)]
 mod test;
 
 use bitvec::{bitvec, vec::BitVec};
 use bucket_fn::BucketFn;
-pub use bucket_fn::CubicEps;
-pub use bucket_fn::SquareEps;
-pub use bucket_fn::Linear;
-pub use cacheline_ef::CachelineEfVec;
+use bucket_fn::CubicEps;
+use bucket_fn::Linear;
+use bucket_fn::SquareEps;
+use cacheline_ef::CachelineEfVec;
 use itertools::izip;
 use itertools::Itertools;
 use mem_dbg::MemSize;
@@ -74,13 +87,16 @@ use rayon::prelude::*;
 use rdst::RadixSort;
 pub use shard::Sharding;
 use stats::BucketStats;
+use std::array::from_fn;
 use std::{borrow::Borrow, default::Default, marker::PhantomData, time::Instant};
 
 use crate::{hash::*, pack::Packed, reduce::*, util::log_duration};
 
 /// Parameters for PtrHash construction.
 ///
-/// Since these are not used in inner loops they are simple variables instead of template arguments.
+/// While all fields are public, prefer one of the default functions,
+/// [`PtrHashParams::default()`], [`PtrHashParams::default_fast()`], or
+/// [`PtrHashParams::default_compact()`].
 #[derive(Clone, Copy, Debug, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 pub struct PtrHashParams<BF> {
@@ -111,6 +127,8 @@ impl PtrHashParams<Linear> {
     /// - `alpha=0.99`
     /// - `lambda=3.0`
     /// - `bucket_fn=Linear`
+    ///
+    /// Takes `3.0` bits/key, and can be up to 2x faster to query than the default version.
     pub fn default_fast() -> Self {
         Self {
             remap: true,
@@ -118,7 +136,6 @@ impl PtrHashParams<Linear> {
             lambda: 3.0,
             bucket_fn: Linear,
             slots_per_part: None,
-            // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^31=16GB.
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
@@ -126,6 +143,7 @@ impl PtrHashParams<Linear> {
     }
 }
 
+#[doc(hidden)]
 impl PtrHashParams<SquareEps> {
     pub fn default_square() -> Self {
         Self {
@@ -134,7 +152,6 @@ impl PtrHashParams<SquareEps> {
             lambda: 3.5,
             bucket_fn: SquareEps,
             slots_per_part: None,
-            // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^31=16GB.
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
@@ -148,6 +165,7 @@ impl PtrHashParams<CubicEps> {
     /// - `lambda=4.0`
     /// - `bucket_fn=CubicEps`
     ///
+    /// Takes `2.1` bits/key.
     /// This occasionally fails construction. If so, try again or use lambda=3.9.
     pub fn default_compact() -> Self {
         Self {
@@ -156,7 +174,6 @@ impl PtrHashParams<CubicEps> {
             lambda: 4.0,
             bucket_fn: CubicEps,
             slots_per_part: None,
-            // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^31=16GB.
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
@@ -169,14 +186,15 @@ impl Default for PtrHashParams<CubicEps> {
     /// - `alpha=0.99`
     /// - `lambda=3.5`
     /// - `bucket_fn=CubicEps`
-    fn default() -> Self {
+    ///
+    /// Gives size `2.4` bits/key, and trades off space and speed.
+    pub fn default() -> Self {
         Self {
             remap: true,
             alpha: 0.99,
             lambda: 3.5,
             bucket_fn: CubicEps,
             slots_per_part: None,
-            // By default, limit to 2^32 keys per shard, whose hashes take 8B*2^31=16GB.
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
@@ -187,7 +205,7 @@ impl Default for PtrHashParams<CubicEps> {
 // Externally visible aliases for convenience.
 
 /// An alias for PtrHash with default generic arguments.
-/// Using this, you can write `DefaultPtrHash::new()` instead of `<PtrHash>::new()`.
+/// Using this, you can write [`DefaultPtrHash::new()`] instead of `<PtrHash>::new()`.
 pub type DefaultPtrHash<H, Key, BF> = PtrHash<Key, BF, CachelineEfVec, H, Vec<u8>>;
 
 /// Using EliasFano for the remap is slower but uses slightly less memory.
@@ -205,10 +223,14 @@ type Pilot = u64;
 type PilotHash = u64;
 
 /// PtrHash datastructure.
-/// The recommended way to use PtrHash with default types.
+/// It is recommended to use PtrHash with default types.
 ///
+/// `Key`: The type of keys to hash.
+/// `BF`: The bucket function to use. Inferred from `PtrHashParams` when calling `PtrHash::new()`.
 /// `F`: The packing to use for remapping free slots, default `CachelineEf`.
-/// `Hx`: The hasher to use for keys, default `FxHash`.
+/// `Hx`: The hasher to use for keys, default `FxHash`, but consider
+///       `hash::Xx64` for strings, or `hash::Xx128` when the number of keys is very
+///       large.
 /// `V`: The pilots type. Usually `Vec<u8>`, or `&[u8]` for Epserde.
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone, MemSize)]
@@ -266,6 +288,7 @@ pub struct PtrHash<
     _hx: PhantomData<Hx>,
 }
 
+/// An empty PtrHash instance. Mostly useless, but may be convenient.
 impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> Default
     for PtrHash<Key, BF, F, Hx, Vec<u8>>
 where
@@ -302,25 +325,10 @@ where
 impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx, Vec<u8>> {
     /// Create a new PtrHash instance from the given keys.
     ///
+    /// Use `<PtrHash>::new()` or `DefaultPtrHash::new()` instead of simply `PtrHash::new()` to
+    /// get the appropriate defaults for the generics.
+    ///
     /// NOTE: Only up to 2^40 keys are supported.
-    ///
-    /// Default parameters `alpha=0.98` and `c=9.0` should give fast
-    /// construction that always succeeds, using `2.69 bits/key`.  Depending on
-    /// the number of keys, you may be able to lower `c` (or slightly increase
-    /// `alpha`) to reduce memory usage, at the cost of increasing construction
-    /// time.
-    ///
-    /// By default, keys are partitioned into buckets of size ~250000, and parts are processed in parallel.
-    /// This will use all available threads. To limit to fewer threads, use:
-    /// ```rust
-    /// let threads = 1;
-    /// rayon::ThreadPoolBuilder::new()
-    /// .num_threads(threads)
-    /// .build_global()
-    /// .unwrap();
-    /// ```
-    ///
-    /// NOTE: Use `<PtrHash>::new()` or `DefaultPtrHash::new()` instead of simply `PtrHash::new()`.
     pub fn new(keys: &[Key], params: PtrHashParams<BF>) -> Self {
         let mut ptr_hash = Self::init(keys.len(), params);
         ptr_hash.compute_pilots(keys.par_iter()).unwrap();
@@ -336,6 +344,8 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     }
 
     /// Fallible version of `new` that returns `None` if construction fails.
+    /// This can happen when `lambda` is too larger (e.g. for `default_compact`
+    /// parameters) and the eviction chains become too long.
     pub fn try_new(keys: &[Key], params: PtrHashParams<BF>) -> Option<Self> {
         let mut ptr_hash = Self::init(keys.len(), params);
         ptr_hash.compute_pilots(keys.par_iter())?;
@@ -343,10 +353,10 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     }
 
     /// Same as `new` above, but takes a `ParallelIterator` over keys instead of a slice.
-    /// The iterator must be cloneable for two reasons:
-    /// - Construction can fail for the first seed (e.g. due to duplicate
-    ///   hashes), in which case a new pass over keys is need.
-    /// NOTE: The exact API may change here depending on what's most convenient to use.
+    ///
+    /// The iterator must be cloneable, since construction can fail for the
+    /// first seed (e.g. due to duplicate hashes), in which case a new pass over
+    /// keys is need.
     pub fn new_from_par_iter<'a>(
         n: usize,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
@@ -619,14 +629,14 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     PtrHash<Key, BF, F, Hx, V>
 {
     /// Return the number of bits per element used for the pilots (`.0`) and the
-    /// remapping (`.1)`.
+    /// remapping (`.1`).
     pub fn bits_per_element(&self) -> (f64, f64) {
         let pilots = self.pilots.as_ref().size_in_bytes() as f64 / self.n as f64;
         let remap = self.remap.size_in_bytes() as f64 / self.n as f64;
         (8. * pilots, 8. * remap)
     }
 
-    pub fn print_bits_per_element(&self) {
+    fn print_bits_per_element(&self) {
         let (p, r) = self.bits_per_element();
         if self.params.print_stats {
             eprintln!(
@@ -640,7 +650,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         self.n
     }
 
-    /// index() always returns below this bound.
+    /// `self.index()` always returns below this bound.
+    /// Should be around `n/alpha ~ 1.01*n`.
     pub fn max_index(&self) -> usize {
         self.slots_total
     }
@@ -684,7 +695,11 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 
     /// Takes an iterator over keys and returns an iterator over the indices of the keys.
     ///
-    /// Uses a buffer of size K for prefetching ahead.
+    /// Uses a buffer of size `B` for prefetching ahead. `B=32` should be a good choice.
+    /// By default, set `MINIMAL` to false when you do not need remapp
+    /// The iterator can return either `Q=Key` or `Q=&Key`.
+    ///
+    /// See the module-level documentation for an example.
     // NOTE: It would be cool to use SIMD to determine buckets/positions in
     // parallel, but this is complicated, since SIMD doesn't support the
     // 64x64->128 multiplications needed in bucket/slot computations.
@@ -700,8 +715,15 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         let mut next_buckets: [usize; B] = [0; B];
 
         // Initialize and prefetch first B values.
+        let mut leftover = B;
         for idx in 0..B {
-            let hx = self.hash_key(keys.next().unwrap().borrow());
+            let hx = keys
+                .next()
+                .map(|k| {
+                    leftover -= 1;
+                    self.hash_key(k.borrow())
+                })
+                .unwrap_or_default();
             next_hashes[idx] = hx;
 
             next_buckets[idx] = self.bucket(next_hashes[idx]);
@@ -726,6 +748,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             keys: KeyIt,
             next_hashes: [Hx::H; B],
             next_buckets: [usize; B],
+            leftover: usize,
         }
 
         impl<
@@ -742,9 +765,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             > Iterator for It<'a, B, MINIMAL, Key, Q, KeyIt, BF, F, Hx, V>
         {
             type Item = usize;
-            #[inline(always)]
             fn next(&mut self) -> Option<usize> {
-                todo!();
+                unimplemented!("Use a method that calls `fold()` instead.");
             }
 
             #[inline(always)]
@@ -777,7 +799,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
                     i += 1;
                 }
 
-                for _ in 0..B {
+                for _ in 0..B - self.leftover {
                     let idx = i % B;
                     let cur_hash = self.next_hashes[idx];
                     let cur_bucket = self.next_buckets[idx];
@@ -802,7 +824,39 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             keys,
             next_hashes,
             next_buckets,
+            leftover,
         }
+    }
+
+    /// Query a batch of `K` keys at once.
+    ///
+    /// Input can be either `[Key; K]` or `[&Key; K]`.
+    #[inline]
+    pub fn index_batch<'a, const K: usize, const MINIMAL: bool, Q: Borrow<Key> + 'a>(
+        &'a self,
+        xs: [Q; K],
+    ) -> [usize; K] {
+        let hashes = xs.map(|x| self.hash_key(x.borrow()));
+        let mut buckets: [usize; K] = [0; K];
+
+        // Prefetch.
+        for idx in 0..K {
+            buckets[idx] = self.bucket(hashes[idx]);
+            crate::util::prefetch_index(self.pilots.as_ref(), buckets[idx]);
+        }
+        // Query.
+        from_fn(
+            #[inline(always)]
+            move |idx| {
+                let pilot = self.pilots.as_ref().index(buckets[idx]);
+                let slot = self.slot(hashes[idx], pilot);
+                if MINIMAL && slot >= self.n {
+                    self.remap.index(slot - self.n) as usize
+                } else {
+                    slot
+                }
+            },
+        )
     }
 
     /// Takes an iterator over keys and returns an iterator over the indices of the keys.
@@ -810,6 +864,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     /// Queries in batches of size K.
     ///
     /// NOTE: Does not process the remainder
+    #[doc(hidden)]
     #[cfg(feature = "unstable")]
     #[inline]
     pub fn index_batch_exact<'a, const K: usize, const MINIMAL: bool>(
@@ -855,6 +910,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 
     /// A variant of index_batch_exact that scales better with K.
     /// Somehow the version above has pretty constant speed regardless of K.
+    #[doc(hidden)]
     #[inline]
     pub fn index_batch_exact2<'a, const K: usize, const MINIMAL: bool>(
         &'a self,
