@@ -2,7 +2,7 @@
 //! Do not use externally.
 use super::*;
 use colored::Colorize;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use rayon::prelude::*;
 use rdst::RadixSort;
 
@@ -55,7 +55,7 @@ pub fn generate_keys(n: usize) -> Vec<u64> {
         let start = Instant::now();
         let keys: Vec<_> = (0..n)
             .into_par_iter()
-            .map_init(thread_rng, |rng, _| rng.gen())
+            .map_init(rng, |rng, _| rng.random())
             .collect();
         let start = log_duration("┌   gen keys", start);
         let mut keys2: Vec<_> = keys.par_iter().copied().collect();
@@ -78,9 +78,9 @@ pub fn generate_string_keys(n: usize) -> Vec<Vec<u8>> {
     // let start = Instant::now();
     let keys: Vec<_> = (0..n)
         .into_par_iter()
-        .map_init(thread_rng, |rng, _| {
-            let len = rng.gen_range(10..=50);
-            (0..len).map(|_| rng.gen_range(1..=255)).collect()
+        .map_init(rng, |rng, _| {
+            let len = rng.random_range(10..=50);
+            (0..len).map(|_| rng.random_range(1..=255)).collect()
         })
         .collect();
     log_duration("generatekeys", start);

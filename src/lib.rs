@@ -81,10 +81,9 @@ use itertools::Itertools;
 use mem_dbg::MemSize;
 use pack::EliasFano;
 use pack::MutPacked;
-use rand::{random, Rng, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
-use rdst::RadixSort;
 pub use shard::Sharding;
 use stats::BucketStats;
 use std::array::from_fn;
@@ -508,7 +507,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             }
 
             // Choose a global seed s.
-            self.seed = rng.gen();
+            self.seed = rng.random();
 
             // Reset output-memory.
             eprintln!("Pilots: {}MB", self.buckets_total / 1_000_000);

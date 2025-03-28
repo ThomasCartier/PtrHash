@@ -11,7 +11,7 @@ use ptr_hash::{
     util::{generate_keys, generate_string_keys},
     KeyT, PtrHash, PtrHashParams, Sharding,
 };
-use rand::{thread_rng, Rng, RngCore};
+use rand::{rng, Rng, RngCore};
 use rayon::iter::IntoParallelIterator;
 use serde::Serialize;
 
@@ -802,7 +802,7 @@ fn string_queries() {
         // PACKED SHORT STRING
         {
             let total_len = 10 * n + 50;
-            let mut rng = thread_rng();
+            let mut rng = rng();
             let mut string = vec![0; total_len];
             rng.fill_bytes(&mut string);
             eprintln!("String size: {total_len}");
@@ -824,7 +824,7 @@ fn string_queries() {
         // PACKED LONG STRING
         {
             let total_len = 10 * n + 50;
-            let mut rng = thread_rng();
+            let mut rng = rng();
             let mut string = vec![0; total_len];
             rng.fill_bytes(&mut string);
             eprintln!("String size: {total_len}");
@@ -846,14 +846,14 @@ fn string_queries() {
         // PACKED RANDOM STRING
         {
             let total_len = 10 * n + 50;
-            let mut rng = thread_rng();
+            let mut rng = rng();
             let mut string = vec![0; total_len];
             rng.fill_bytes(&mut string);
             eprintln!("String size: {total_len}");
             let mut idx = 0;
             let keys: Vec<&[u8]> = (0..n)
                 .map(|_| {
-                    let len = rng.gen_range(10..=50);
+                    let len = rng.random_range(10..=50);
                     let slice = &string[idx..idx + len];
                     idx += 10;
                     slice
