@@ -52,7 +52,7 @@ impl MulReduce {
 }
 impl Reduce for MulReduce {
     fn new(d: usize) -> Self {
-        assert!(d.is_power_of_two());
+        assert!(d.is_power_of_two(), "{d} is not a power of 2");
         Self {
             mask: (d - 1) as u64,
         }

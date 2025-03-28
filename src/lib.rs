@@ -79,7 +79,6 @@ use cacheline_ef::CachelineEfVec;
 use itertools::izip;
 use itertools::Itertools;
 use mem_dbg::MemSize;
-use pack::EliasFano;
 use pack::MutPacked;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -107,9 +106,6 @@ pub struct PtrHashParams<BF> {
     pub lambda: f64,
     /// Bucket function
     pub bucket_fn: BF,
-    /// If given, #slots/part will be the smallest power of 2 at least this.
-    /// By default, it is computed as the smallest power of 2 for which construction is likely to succeed.
-    pub slots_per_part: Option<usize>,
     /// Upper bound on number of keys per shard.
     /// Default is 2^32, or 32GB of hashes per shard.
     pub keys_per_shard: usize,
@@ -134,7 +130,6 @@ impl PtrHashParams<Linear> {
             alpha: 0.99,
             lambda: 3.0,
             bucket_fn: Linear,
-            slots_per_part: None,
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
@@ -150,7 +145,6 @@ impl PtrHashParams<SquareEps> {
             alpha: 0.99,
             lambda: 3.5,
             bucket_fn: SquareEps,
-            slots_per_part: None,
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
@@ -159,27 +153,7 @@ impl PtrHashParams<SquareEps> {
 }
 
 impl PtrHashParams<CubicEps> {
-    /// Default 'compact' parameters:
-    /// - `alpha=0.99`
-    /// - `lambda=4.0`
-    /// - `bucket_fn=CubicEps`
-    ///
-    /// Takes `2.1` bits/key.
-    /// This occasionally fails construction. If so, try again or use lambda=3.9.
-    pub fn default_compact() -> Self {
-        Self {
-            remap: true,
-            alpha: 0.99,
-            lambda: 4.0,
-            bucket_fn: CubicEps,
-            slots_per_part: None,
-            keys_per_shard: 1 << 31,
-            sharding: Sharding::None,
-            print_stats: false,
-        }
-    }
-
-    /// Default 'compact' parameters:
+    /// Default parameters:
     /// - `alpha=0.99`
     /// - `lambda=3.5`
     /// - `bucket_fn=CubicEps`
@@ -191,7 +165,25 @@ impl PtrHashParams<CubicEps> {
             alpha: 0.99,
             lambda: 3.5,
             bucket_fn: CubicEps,
-            slots_per_part: None,
+            keys_per_shard: 1 << 31,
+            sharding: Sharding::None,
+            print_stats: false,
+        }
+    }
+
+    /// Default 'compact' parameters:
+    /// - `alpha=0.99`
+    /// - `lambda=4.0`
+    /// - `bucket_fn=CubicEps`
+    ///
+    /// Takes `2.1` bits/key, but is typically 2x slower to construct than the default version.
+    /// This occasionally fails construction. If so, try again or use lambda=3.9.
+    pub fn default_compact() -> Self {
+        Self {
+            remap: true,
+            alpha: 0.99,
+            lambda: 4.0,
+            bucket_fn: CubicEps,
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
             print_stats: false,
@@ -205,14 +197,14 @@ impl Default for PtrHashParams<CubicEps> {
     }
 }
 
-// Externally visible aliases for convenience.
-
-/// An alias for PtrHash with default generic arguments.
-/// Using this, you can write [`DefaultPtrHash::new()`] instead of `<PtrHash>::new()`.
-pub type DefaultPtrHash<H, Key, BF> = PtrHash<Key, BF, CachelineEfVec, H, Vec<u8>>;
-
-/// Using EliasFano for the remap is slower but uses slightly less memory.
-pub type EfPtrHash<H, Key> = PtrHash<Key, CubicEps, EliasFano, H, Vec<u8>>;
+/// Type alias to simplify construction.
+///
+/// [`PtrHash`] has a large number of generics, partly to support epserde.
+/// [`DefaultPtrHash`] fills in most values.
+///
+/// Use this as [`DefaultPtrHash::new()`] or `<DefaultPtrHash>::new()`.
+pub type DefaultPtrHash<Hx = hash::FxHash, Key = u64, BF = bucket_fn::CubicEps> =
+    PtrHash<Key, BF, CachelineEfVec, Hx, Vec<u8>>;
 
 /// Trait that keys must satisfy.
 pub trait KeyT: Send + Sync + std::hash::Hash {}
@@ -221,7 +213,6 @@ impl<T: Send + Sync + std::hash::Hash> KeyT for T {}
 // Some fixed algorithmic decisions.
 type Rp = FastReduce;
 type Rb = FastReduce;
-type Rs = MulReduce;
 type Pilot = u64;
 type PilotHash = u64;
 
@@ -261,9 +252,6 @@ pub struct PtrHash<
     buckets_total: usize,
     /// The number of slots per part, always a power of 2.
     slots: usize,
-    /// Since s is a power of 2, we can compute multiplications using a shift
-    /// instead.
-    lg_slots: u32,
     /// The number of buckets per part.
     buckets: usize,
 
@@ -272,13 +260,13 @@ pub struct PtrHash<
     rem_shards: Rp,
     /// Fast %parts.
     rem_parts: Rp,
-    /// Fast &b.
+    /// Fast %b.
     rem_buckets: Rb,
-    /// Fast &b_total.
+    /// Fast %b_total.
     rem_buckets_total: Rb,
 
-    /// Fast %s.
-    rem_slots: Rs,
+    /// Fast %s when there is only a single part.
+    rem_slots: Rp,
 
     // Computed state.
     /// The global seed.
@@ -308,13 +296,12 @@ where
             slots_total: 0,
             buckets_total: 0,
             slots: 0,
-            lg_slots: 0,
             buckets: 0,
             rem_shards: FastReduce::new(0),
             rem_parts: FastReduce::new(0),
             rem_buckets: FastReduce::new(0),
             rem_buckets_total: FastReduce::new(0),
-            rem_slots: MulReduce::new(1),
+            rem_slots: FastReduce::new(0),
             seed: 0,
             pilots: vec![],
             remap: F::default(),
@@ -328,7 +315,7 @@ where
 impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx, Vec<u8>> {
     /// Create a new PtrHash instance from the given keys.
     ///
-    /// Use `<PtrHash>::new()` or `DefaultPtrHash::new()` instead of simply `PtrHash::new()` to
+    /// Use `<PtrHash>::new()` or `LargePtrHash::new()` instead of simply `PtrHash::new()` to
     /// get the appropriate defaults for the generics.
     ///
     /// NOTE: Only up to 2^40 keys are supported.
@@ -372,8 +359,8 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
 
     /// Only initialize the parameters; do not compute the pilots yet.
     fn init(n: usize, mut params: PtrHashParams<BF>) -> Self {
-        assert!(n > 1, "Things break if n=1.");
         assert!(n < (1 << 40), "Number of keys must be less than 2^40.");
+
         let shards = match params.sharding {
             Sharding::None => 1,
             _ => n.div_ceil(params.keys_per_shard),
@@ -382,17 +369,6 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
         let keys_per_shard = n.div_ceil(shards);
         eprintln!("keys/shard: {}", keys_per_shard);
 
-        // Compute the optimal number of slots per part.
-        // - Smaller parts have better cache locality and hence faster construction.
-        // - Larger parts have more uniform sizes, and hence fewer outliers with load factor close to 1.
-        // We use the smallest power of 2 for which the probability that the
-        // largest part has load factor <1 is large enough.
-        let mut slots_per_part = params.slots_per_part.map_or(2, |s| s.next_power_of_two());
-        assert!(
-            slots_per_part <= u32::MAX as _,
-            "Each part must have <2^32 slots"
-        );
-
         let mut keys_per_part;
         let mut parts_per_shard;
         let mut buckets_per_part;
@@ -400,15 +376,28 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
         let mut parts;
         let mut buckets_total;
         let mut slots_total;
+        let mut slots_per_part;
+
+        // Avoid overly small parts.
+        parts = (n / 1024).next_power_of_two().next_multiple_of(shards);
+
+        // Compute the optimal number of parts and slots per part.
+        // - Smaller parts have better cache locality and hence faster construction.
+        // - Larger parts have more uniform sizes, and hence fewer outliers with load factor close to 1.
+        // The number of parts is the largest power of two for which the probability that the
+        // largest part has load factor <1 is large enough.
 
         loop {
-            keys_per_part = (params.alpha * slots_per_part as f64) as usize;
-            parts_per_shard = keys_per_shard.div_ceil(keys_per_part);
-            buckets_per_part = (keys_per_part as f64 / params.lambda).ceil() as usize;
-
-            parts = shards * parts_per_shard;
-            buckets_total = parts * buckets_per_part;
+            keys_per_part = n / parts;
+            parts_per_shard = parts / shards;
+            slots_per_part = (keys_per_part as f64 / params.alpha) as usize;
             slots_total = parts * slots_per_part;
+            buckets_per_part = (keys_per_part as f64 / params.lambda).ceil() as usize;
+            buckets_total = parts * buckets_per_part;
+
+            if parts == 1 {
+                break;
+            }
 
             // Test if the probability of success is large enough.
             let exp_keys_per_part = n as f64 / parts as f64;
@@ -425,30 +414,16 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                 break;
             }
 
-            // If slots_per_part was explicitly given, always use it.
-            if params.slots_per_part.is_some() {
-                eprintln!("Using user provided slots per part of {slots_per_part}, but it is likely too small for construction to succeed.");
-                eprintln!(
-                    "The largest part is expected to have around {} keys.",
-                    exp_max as usize
-                );
-                break;
-            }
-
-            slots_per_part *= 2;
-            assert!(
-                slots_per_part <= u32::MAX as _,
-                "Each part must have <2^32 slots"
-            );
+            parts = (parts / 2).next_multiple_of(shards);
         }
 
-        if params.print_stats {
+        if params.print_stats || true {
             eprintln!("        keys: {n:>10}");
             eprintln!("      shards: {shards:>10}");
-            eprintln!("       parts: {parts:>10}");
+            println!("       parts: {parts:>10}");
             eprintln!("   slots/prt: {slots_per_part:>10}");
             eprintln!("   slots tot: {slots_total:>10}");
-            eprintln!("  real alpha: {:>10.4}", n as f64 / slots_total as f64);
+            println!("  real alpha: {:>10.4}", n as f64 / slots_total as f64);
             eprintln!(" buckets/prt: {buckets_per_part:>10}");
             eprintln!(" buckets tot: {buckets_total:>10}");
             eprintln!("keys/ bucket: {:>13.2}", n as f64 / buckets_total as f64);
@@ -465,14 +440,13 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             parts_per_shard,
             slots_total,
             slots: slots_per_part,
-            lg_slots: slots_per_part.ilog2(),
             buckets_total,
             buckets: buckets_per_part,
             rem_shards: Rp::new(shards),
             rem_parts: Rp::new(parts),
             rem_buckets: Rb::new(buckets_per_part),
             rem_buckets_total: Rb::new(buckets_total),
-            rem_slots: Rs::new(slots_per_part),
+            rem_slots: Rp::new(slots_per_part),
             seed: 0,
             pilots: Default::default(),
             remap: F::default(),
@@ -491,7 +465,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
         let mut pilots: Vec<u8> = vec![];
 
         let mut tries = 0;
-        const MAX_TRIES: usize = 1;
+        const MAX_TRIES: usize = 10;
 
         let mut rng = ChaCha8Rng::seed_from_u64(31415);
 
@@ -503,7 +477,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                 return None;
             }
             if tries > 1 {
-                eprintln!("Try {tries} for global seed.");
+                eprintln!("NEW TRY Try {tries} for global seed.");
             }
 
             // Choose a global seed s.
@@ -524,7 +498,8 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
 
             // Iterate over shards.
             let shard_hashes = self.shards(keys.clone());
-            let shard_pilots = pilots.chunks_mut(self.buckets * self.parts_per_shard);
+            // Avoid chunks_mut(0) when n=0.
+            let shard_pilots = pilots.chunks_mut((self.buckets * self.parts_per_shard).max(1));
             let shard_taken = taken.chunks_mut(self.parts_per_shard);
             let mut stats = BucketStats::default();
             // eprintln!("Num shards (keys) {}", shard_keys.());
@@ -986,7 +961,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 
     /// Slot uses the 64 low bits of the hash.
     fn slot(&self, hx: Hx::H, pilot: u64) -> usize {
-        (self.part(hx) << self.lg_slots) + self.slot_in_part(hx, pilot)
+        (self.part(hx) * self.slots) + self.slot_in_part(hx, pilot)
     }
 
     fn slot_in_part(&self, hx: Hx::H, pilot: Pilot) -> usize {
@@ -995,10 +970,6 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 
     /// Slot uses the 64 low bits of the hash.
     fn slot_in_part_hp(&self, hx: Hx::H, hp: PilotHash) -> usize {
-        // NOTE: Fastmod s is slower since it needs two multiplications instead of 1.
-        // NOTE: A simple &(s-1) mask is not sufficient, since it only uses the low order bits.
-        //       The part() and bucket() functions only use high order bits, which
-        //       would leave the middle bits unused, causing hash collisions.
-        self.rem_slots.reduce(hx.low() ^ hp)
+        self.rem_slots.reduce(MulHash::C * (hx.low() ^ hp))
     }
 }

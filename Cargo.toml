@@ -16,7 +16,7 @@ include = ["src/**/*", "examples/*", "readme.md"]
 
 [profile.release]
 # Things are _slightly_ faster without debug symbols, but they're nice for debugging.
-# debug = true
+debug = true
 # Needed for good inlining across crates, in particular murmur2.
 lto = "thin"
 incremental = true

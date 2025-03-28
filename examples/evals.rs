@@ -57,7 +57,6 @@ const PARAMS_FAST: PtrHashParams<Linear> = PtrHashParams {
     lambda: 3.0,
     bucket_fn: Linear,
     // defaults...
-    slots_per_part: None,
     keys_per_shard: 1 << 31,
     sharding: Sharding::None,
     remap: true,
@@ -70,7 +69,6 @@ const PARAMS_DEFAULT: PtrHashParams<CubicEps> = PtrHashParams {
     lambda: 3.5,
     bucket_fn: CubicEps,
     // defaults...
-    slots_per_part: None,
     keys_per_shard: 1 << 31,
     sharding: Sharding::None,
     remap: true,
@@ -82,7 +80,6 @@ const PARAMS_COMPACT: PtrHashParams<CubicEps> = PtrHashParams {
     lambda: 4.0,
     bucket_fn: CubicEps,
     // defaults...
-    slots_per_part: None,
     keys_per_shard: 1 << 31,
     sharding: Sharding::None,
     remap: true,
