@@ -24,7 +24,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
 
         let iter = pilots_per_part.zip(taken).enumerate();
 
-        let total_evictions = AtomicUsize::new(0);
+        // let total_evictions = AtomicUsize::new(0);
         let parts_done = AtomicUsize::new(shard * self.parts_per_shard);
         let stats = Mutex::new(BucketStats::new());
 
@@ -32,17 +32,18 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             let part = shard * self.parts_per_shard + part_in_shard;
             let hashes = &hashes
                 [part_starts[part_in_shard] as usize..part_starts[part_in_shard + 1] as usize];
-            let cnt = self.build_part(part, hashes, pilots, taken, &stats)?;
-            let parts_done = parts_done.fetch_add(1, Ordering::Relaxed);
-            total_evictions.fetch_add(cnt, Ordering::Relaxed);
+            let _cnt = self.build_part(part, hashes, pilots, taken, &stats)?;
+            let _parts_done = parts_done.fetch_add(1, Ordering::Relaxed);
+            // total_evictions.fetch_add(cnt, Ordering::Relaxed);
 
-            if self.params.print_stats {
-                eprint!(
-                    "parts done: {parts_done:>6}/{:>6} ({:>4.1}%)\r",
-                    self.parts,
-                    100. * parts_done as f32 / self.parts as f32
-                );
-            }
+            // if self.params.print_stats {
+            //     eprint!(
+            //         "parts done: {parts_done:>6}/{:>6} ({:>4.1}%)\r",
+            //         self.parts,
+            //         100. * parts_done as f32 / self.parts as f32
+            //     );
+            // }
+
             Some(())
         });
 
@@ -55,25 +56,25 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             (shard + 1) * self.parts_per_shard
         );
 
-        let total_evictions: usize = total_evictions.load(Ordering::Relaxed);
-        let sum_pilots = pilots.iter().map(|&k| k as Pilot).sum::<Pilot>();
+        // let total_evictions: usize = total_evictions.load(Ordering::Relaxed);
+        // let sum_pilots = pilots.iter().map(|&k| k as Pilot).sum::<Pilot>();
 
-        // Clear the last \r line.
-        if self.params.print_stats {
-            eprint!("\x1b[K");
-            eprintln!(
-                "  displ./bkt: {:>14.3}",
-                total_evictions as f32 / (self.buckets * self.parts_per_shard) as f32
-            );
-            eprintln!(
-                "   avg pilot: {:>14.3}",
-                sum_pilots as f32 / (self.buckets * self.parts_per_shard) as f32
-            );
-        }
+        // // Clear the last \r line.
+        // if self.params.print_stats {
+        //     eprint!("\x1b[K");
+        //     eprintln!(
+        //         "  displ./bkt: {:>14.3}",
+        //         total_evictions as f32 / (self.buckets * self.parts_per_shard) as f32
+        //     );
+        //     eprintln!(
+        //         "   avg pilot: {:>14.3}",
+        //         sum_pilots as f32 / (self.buckets * self.parts_per_shard) as f32
+        //     );
+        // }
 
-        if self.params.print_stats {
-            stats.lock().unwrap().print();
-        }
+        // if self.params.print_stats {
+        //     stats.lock().unwrap().print();
+        // }
 
         Some(stats.into_inner().unwrap())
     }
@@ -84,7 +85,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         hashes: &[Hx::H],
         pilots: &mut [u8],
         taken: &mut BitSlice,
-        stats: &Mutex<BucketStats>,
+        _stats: &Mutex<BucketStats>,
     ) -> Option<usize> {
         let (starts, bucket_order) = self.sort_buckets(part, hashes);
 
@@ -123,7 +124,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
 
         let mut rng = fastrand::Rng::new();
 
-        let mut eviction_counts: Vec<usize> = vec![];
+        // let mut eviction_counts: Vec<usize> = vec![];
 
         for (i, &new_b) in bucket_order.iter().enumerate() {
             let new_bucket = &hashes[starts[new_b] as usize..starts[new_b + 1] as usize];
@@ -144,20 +145,20 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                 if evictions > self.slots && evictions.is_power_of_two() {
                     // log = true;
                     let num_taken_slots = taken.count_ones();
-                    if self.params.print_stats {
-                        eprintln!(
-                            "part {part:>6} alpha {:>5.2}% bucket size {} ({}/{}, {:>5.2}%) slots filled {}/{} ({:>5.2}%) chain: {evictions:>9}",
-                            100. * hashes.len()  as f32 / slots.len() as f32,
-                            new_b_len,
-                            i, self.buckets,
-                            100. * i as f32 / self.buckets as f32,
-                            num_taken_slots,
-                            taken.len(),
-                            100. * num_taken_slots as f32 / taken.len() as f32,
-                        );
-                    }
+                    // if self.params.print_stats {
+                    //     eprintln!(
+                    //         "part {part:>6} alpha {:>5.2}% bucket size {} ({}/{}, {:>5.2}%) slots filled {}/{} ({:>5.2}%) chain: {evictions:>9}",
+                    //         100. * hashes.len()  as f32 / slots.len() as f32,
+                    //         new_b_len,
+                    //         i, self.buckets,
+                    //         100. * i as f32 / self.buckets as f32,
+                    //         num_taken_slots,
+                    //         taken.len(),
+                    //         100. * num_taken_slots as f32 / taken.len() as f32,
+                    //     );
+                    // }
                     if evictions >= 10 * self.slots {
-                        eprintln!(
+                        trace!(
                             "\
 Too many evictions. Aborting!
 When the current bucket has size >=2, try decreasing lambda to use fewer elements per buckets.
@@ -309,23 +310,23 @@ Eviction chain length: {evictions:>9}
                 recent[recent_idx] = b;
             }
             total_evictions += evictions;
-            if self.params.print_stats {
-                eviction_counts.push(evictions);
-            }
+            // if self.params.print_stats {
+            // eviction_counts.push(evictions);
+            // }
         }
 
-        if self.params.print_stats {
-            let mut stats = stats.lock().unwrap();
-            for (i, &b) in bucket_order.iter().enumerate() {
-                stats.add(
-                    i,
-                    bucket_order.len(),
-                    bucket_len(b),
-                    pilots[b] as Pilot,
-                    *eviction_counts.get(i).unwrap_or(&0),
-                );
-            }
-        }
+        // if self.params.print_stats {
+        //     let mut stats = stats.lock().unwrap();
+        //     for (i, &b) in bucket_order.iter().enumerate() {
+        //         stats.add(
+        //             i,
+        //             bucket_order.len(),
+        //             bucket_len(b),
+        //             pilots[b] as Pilot,
+        //             *eviction_counts.get(i).unwrap_or(&0),
+        //         );
+        //     }
+        // }
 
         Some(total_evictions)
     }

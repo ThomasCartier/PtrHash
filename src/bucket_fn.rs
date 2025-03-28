@@ -96,7 +96,6 @@ impl BucketFn for Skewed {
         self.slope2 = mul_high(as_u64((1. - gamma) / (1. - beta) / 8.), self.b << 3);
         self.neg_offset = mul_high(as_u64((beta - gamma) / (1. - beta) / 8.), self.b << 3);
         self.beta = as_u64(beta);
-        eprintln!("{self:?}");
     }
     fn call(&self, x: u64) -> u64 {
         // NOTE: There is a lot of MOV/CMOV going on here.

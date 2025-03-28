@@ -1,6 +1,3 @@
-// TODO:
-// - Specialization for instances with a single part.
-// - Use trace instead of eprintln.
 #![cfg_attr(feature = "unstable", feature(iter_array_chunks))]
 //! # PtrHash: Minimal Perfect Hashing at RAM Throughput
 //!
@@ -89,6 +86,8 @@ use bucket_fn::SquareEps;
 use cacheline_ef::CachelineEfVec;
 use itertools::izip;
 use itertools::Itertools;
+use log::trace;
+use log::warn;
 use mem_dbg::MemSize;
 use pack::MutPacked;
 use rand::{Rng, SeedableRng};
@@ -108,6 +107,7 @@ use crate::{hash::*, pack::Packed, reduce::*, util::log_duration};
 /// [`PtrHashParams::default_compact()`].
 #[derive(Clone, Copy, Debug, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
+#[cfg_attr(feature = "epserde", deep_copy)]
 pub struct PtrHashParams<BF> {
     /// Set to false to disable remapping to a minimal PHF.
     pub remap: bool,
@@ -123,9 +123,6 @@ pub struct PtrHashParams<BF> {
     /// When true, write each shard to a file instead of iterating multiple
     /// times.
     pub sharding: Sharding,
-
-    /// Print bucket size and pilot stats after construction.
-    pub print_stats: bool,
 
     /// Force using a single part, so that [`PtrHash::index_single_part()`] can be used.
     ///
@@ -148,7 +145,6 @@ impl PtrHashParams<Linear> {
             bucket_fn: Linear,
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
-            print_stats: false,
             single_part: false,
         }
     }
@@ -164,7 +160,6 @@ impl PtrHashParams<SquareEps> {
             bucket_fn: SquareEps,
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
-            print_stats: false,
             single_part: false,
         }
     }
@@ -185,7 +180,6 @@ impl PtrHashParams<CubicEps> {
             bucket_fn: CubicEps,
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
-            print_stats: false,
             single_part: false,
         }
     }
@@ -205,7 +199,6 @@ impl PtrHashParams<CubicEps> {
             bucket_fn: CubicEps,
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,
-            print_stats: false,
             single_part: false,
         }
     }
@@ -385,9 +378,6 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             Sharding::None => 1,
             _ => n.div_ceil(params.keys_per_shard),
         };
-        eprintln!("#shards: {}", shards);
-        let keys_per_shard = n.div_ceil(shards);
-        eprintln!("keys/shard: {}", keys_per_shard);
 
         let mut keys_per_part;
         let mut parts_per_shard;
@@ -434,24 +424,22 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             let buf_max = exp_max + 2.0 * stddev;
 
             if buf_max < slots_per_part as f64 {
-                eprintln!("Using slots per part: {slots_per_part}, expected keys {}, expected max keys: {} ({stddevs_away} σ)", exp_keys_per_part as usize, exp_max as usize);
                 break;
             }
 
             parts = (parts / 2).next_multiple_of(shards);
         }
 
-        if params.print_stats || true {
-            eprintln!("        keys: {n:>10}");
-            eprintln!("      shards: {shards:>10}");
-            println!("       parts: {parts:>10}");
-            eprintln!("   slots/prt: {slots_per_part:>10}");
-            eprintln!("   slots tot: {slots_total:>10}");
-            println!("  real alpha: {:>10.4}", n as f64 / slots_total as f64);
-            eprintln!(" buckets/prt: {buckets_per_part:>10}");
-            eprintln!(" buckets tot: {buckets_total:>10}");
-            eprintln!("keys/ bucket: {:>13.2}", n as f64 / buckets_total as f64);
-        }
+        trace!("        keys: {n:>10}");
+        trace!("      shards: {shards:>10}");
+        trace!("       parts: {parts:>10}");
+        trace!("   slots/prt: {slots_per_part:>10}");
+        trace!("   slots tot: {slots_total:>10}");
+        trace!("  real alpha: {:>10.4}", n as f64 / slots_total as f64);
+        trace!(" buckets/prt: {buckets_per_part:>10}");
+        trace!(" buckets tot: {buckets_total:>10}");
+        trace!("keys/ bucket: {:>13.2}", n as f64 / buckets_total as f64);
+
         params
             .bucket_fn
             .set_buckets_per_part(buckets_per_part as u64);
@@ -497,23 +485,21 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
         let stats = 's: loop {
             tries += 1;
             if tries > MAX_TRIES {
-                eprintln!("Failed to find a global seed after {MAX_TRIES} tries.");
+                warn!("PtrHash failed to find a global seed after {MAX_TRIES} tries.");
                 return None;
             }
             if tries > 1 {
-                eprintln!("NEW TRY Try {tries} for global seed.");
+                trace!("NEW TRY Try {tries} for global seed.");
             }
 
             // Choose a global seed s.
             self.seed = rng.random();
 
             // Reset output-memory.
-            eprintln!("Pilots: {}MB", self.buckets_total / 1_000_000);
             pilots.clear();
             pilots.resize(self.buckets_total, 0);
 
             // TODO: Compress taken on the fly, instead of pre-allocating the entire thing.
-            eprintln!("Taken: {}MB", self.parts * self.slots / 8 / 1_000_000);
             for taken in taken.iter_mut() {
                 taken.clear();
                 taken.resize(self.slots, false);
@@ -533,7 +519,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                 // Determine the buckets.
                 let start = std::time::Instant::now();
                 let Some((hashes, part_starts)) = self.sort_parts(shard, hashes) else {
-                    eprintln!("Found duplicate hashes");
+                    trace!("Found duplicate hashes");
                     // Found duplicate hashes.
                     continue 's;
                 };
@@ -546,7 +532,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                     stats.merge(shard_stats);
                     log_duration("find pilots", start);
                 } else {
-                    eprintln!("Could not find pilots");
+                    trace!("Could not find pilots");
                     continue 's;
                 }
             }
@@ -555,13 +541,8 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             let remap = self.remap_free_slots(&taken);
             log_duration("remap free", start);
             if remap.is_err() {
-                eprintln!("Failed to construct CachelineEF");
+                trace!("Failed to construct CachelineEF");
                 continue 's;
-            }
-
-            // Found a suitable seed.
-            if tries > 1 {
-                eprintln!("Found seed after {tries} tries.");
             }
 
             break 's stats;
@@ -570,7 +551,8 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
         // Pack the data.
         self.pilots = pilots;
 
-        self.print_bits_per_element();
+        let (p, r) = self.bits_per_element();
+        trace!("bits/element: {}", p + r);
         log_duration("total build", overall_start);
         Some(stats)
     }
@@ -605,13 +587,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             }
             v.push(i as u64);
         }
-        eprintln!("Remap len: {}", v.len());
         self.remap = MutPacked::try_new(v).ok_or(())?;
-        eprintln!(
-            "Remap size: {}MB = {}B",
-            self.remap.size_in_bytes() / 1_000_000,
-            self.remap.size_in_bytes()
-        );
         Ok(())
     }
 }
@@ -626,16 +602,6 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         let pilots = self.pilots.as_ref().size_in_bytes() as f64 / self.n as f64;
         let remap = self.remap.size_in_bytes() as f64 / self.n as f64;
         (8. * pilots, 8. * remap)
-    }
-
-    fn print_bits_per_element(&self) {
-        let (p, r) = self.bits_per_element();
-        if self.params.print_stats {
-            eprintln!(
-                "bits/element: {:>13.2}  (pilots {p:4.2}, remap {r:4.2})",
-                p + r
-            );
-        }
     }
 
     pub fn n(&self) -> usize {

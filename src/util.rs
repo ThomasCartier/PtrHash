@@ -2,6 +2,7 @@
 //! Do not use externally.
 use super::*;
 use colored::Colorize;
+use log::{trace, warn};
 use rand::{rng, Rng};
 use rayon::prelude::*;
 use rdst::RadixSort;
@@ -41,7 +42,7 @@ pub(crate) fn log_duration(name: &str, start: Instant) -> Instant {
     if !LOG.with(|log| log.get()) {
         return start;
     }
-    eprintln!(
+    trace!(
         "{}",
         format!("{name:>12}: {:>13.2?}s", start.elapsed().as_secs_f32()).bold()
     );
@@ -67,7 +68,7 @@ pub fn generate_keys(n: usize) -> Vec<u64> {
         if distinct {
             break keys;
         }
-        eprintln!("DUPLICATE KEYS GENERATED");
+        warn!("DUPLICATE KEYS GENERATED");
     };
     log_duration("generatekeys", start);
     keys

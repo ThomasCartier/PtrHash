@@ -60,7 +60,6 @@ const PARAMS_FAST: PtrHashParams<Linear> = PtrHashParams {
     keys_per_shard: 1 << 31,
     sharding: Sharding::None,
     remap: true,
-    print_stats: false,
     single_part: false,
 };
 
@@ -73,7 +72,6 @@ const PARAMS_DEFAULT: PtrHashParams<CubicEps> = PtrHashParams {
     keys_per_shard: 1 << 31,
     sharding: Sharding::None,
     remap: true,
-    print_stats: false,
     single_part: false,
 };
 
@@ -85,7 +83,6 @@ const PARAMS_COMPACT: PtrHashParams<CubicEps> = PtrHashParams {
     keys_per_shard: 1 << 31,
     sharding: Sharding::None,
     remap: true,
-    print_stats: false,
     single_part: false,
 };
 
@@ -141,7 +138,6 @@ fn bucket_fn_stats() {
 
     fn build(keys: &Vec<u64>, lambda: f64, bucket_fn: impl BucketFn) -> BucketStats {
         let params = PtrHashParams {
-            print_stats: true,
             lambda,
             bucket_fn,
             alpha: 0.99,

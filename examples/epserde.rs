@@ -2,6 +2,8 @@ use epserde::prelude::*;
 use ptr_hash::{PtrHash, PtrHashParams};
 
 fn main() {
+    env_logger::init();
+
     // Generate some random keys.
     let n = 1000_000_000;
     eprintln!("Generating keys..");

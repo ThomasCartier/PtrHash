@@ -5,6 +5,7 @@ use std::{
 };
 
 use clap::builder::PossibleValue;
+use log::{info, trace};
 
 use super::*;
 
@@ -64,9 +65,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         &'a self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
-        if self.params.print_stats {
-            eprintln!("No sharding: collecting all {} hashes in memory.", self.n);
-        }
+        trace!("No sharding: collecting all {} hashes in memory.", self.n);
         let start = std::time::Instant::now();
         let hashes = keys.map(|key| self.hash_key(key.borrow())).collect();
         log_duration("collect hash", start);
@@ -80,20 +79,20 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
         &'a self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
-        eprintln!(
+        trace!(
             "In-memory sharding: iterate keys once for each of {} shards, each of ~{} keys.",
             self.shards,
             self.n / self.shards
         );
         let it = (0..self.shards).map(move |shard| {
-            eprint!("Shard {shard:>3}/{:3}\r", self.shards);
+            trace!("Shard {shard:>3}/{:3}\r", self.shards);
             let start = std::time::Instant::now();
             let hashes: Vec<_> = keys
                 .clone()
                 .map(|key| self.hash_key(key.borrow()))
                 .filter(move |h| self.shard(*h) == shard)
                 .collect();
-            eprintln!("Shard {shard:>3}/{:3}: {} keys", self.shards, hashes.len());
+            trace!("Shard {shard:>3}/{:3}: {} keys", self.shards, hashes.len());
             log_duration("collect shrd", start);
             hashes
         });
@@ -120,9 +119,9 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             "Each shard takes more than the provided memory."
         );
         if mem < usize::MAX {
-            eprintln!("Hybrid sharding: writing hashes to disk for {shards_on_disk} shards at a time, for total {} shards each of ~{} keys.", self.shards, self.n / self.shards);
+            info!("Hybrid sharding: writing hashes to disk for {shards_on_disk} shards at a time, for total {} shards each of ~{} keys.", self.shards, self.n / self.shards);
         } else {
-            eprintln!(
+            info!(
                 "On-disk sharding: writing hashes to disk for all {} shards at a time, each of ~{} keys.",
                 self.shards, self.n / self.shards
 
@@ -133,10 +132,10 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             .step_by(shards_on_disk)
             .flat_map(move |first_shard| {
                 let temp_dir = tempfile::TempDir::new().unwrap();
-                eprintln!("TMP PATH: {:?}", temp_dir.path());
+                info!("TMP PATH: {:?}", temp_dir.path());
 
                 let shard_range = first_shard..(first_shard + shards_on_disk).min(self.shards);
-                eprintln!("Writing keys for shards {shard_range:?}/{}", self.shards);
+                info!("Writing keys for shards {shard_range:?}/{}", self.shards);
 
                 let start = std::time::Instant::now();
 
@@ -187,7 +186,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                 files
                     .into_iter()
                     .zip(shard_range)
-                    .map(move |((f, cnt), shard)| {
+                    .map(move |((f, cnt), _shard)| {
                         let start = std::time::Instant::now();
                         let mut v = vec![Hx::H::default(); cnt];
                         let mut reader = BufReader::new(f);
@@ -196,7 +195,6 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
                         assert!(post.is_empty());
                         Read::read_exact(&mut reader, data).unwrap();
                         log_duration("Read shard", start);
-                        eprintln!("Read {shard:>3}/{:3}: {} keys", self.shards, cnt);
                         v
                     })
 

@@ -66,39 +66,38 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             let len = (end - start) as usize;
             max_part_len = max_part_len.max(len);
         }
-        if self.params.print_stats || true {
-            let exp = self.n / self.parts;
-            let stddev = exp.isqrt();
-            // https://math.stackexchange.com/a/89147/91741:
-            // expected max of N (here #parts) samples of a random variable is
-            // exp + sigma * sqrt(2 * ln N).
-            let exp_max = exp + stddev * ((self.parts as f32).ln() * 2.).sqrt() as usize;
-            eprintln!("exp key/part: {exp:>10} stddev {stddev:>10}");
-            eprintln!(
-                "exp max k/pt: {exp_max:>10}        {:>10} {:>8.2}",
-                exp_max - exp,
-                (exp_max - exp) as f32 / stddev as f32
-            );
-            eprintln!(
-                "    max k/pt: {max_part_len:>10}        {:>10} {:>8.2}",
-                max_part_len - exp,
-                (max_part_len - exp) as f32 / stddev as f32
-            );
-            eprintln!(
-                "    slots/pt: {:>10}        {:>10} {:>8.2}",
-                self.slots,
-                self.slots - exp,
-                (self.slots - exp) as f32 / stddev as f32
-            );
-            eprintln!("exp    alpha: {:>13.2}%", 100. * self.params.alpha);
-            eprintln!(
-                "max    alpha: {:>13.2}%",
-                100. * max_part_len as f32 / self.slots as f32
-            );
-        }
+        let exp = self.n / self.parts;
+        let stddev = exp.isqrt();
+
+        // https://math.stackexchange.com/a/89147/91741:
+        // expected max of N (here #parts) samples of a random variable is
+        // exp + sigma * sqrt(2 * ln N).
+        let exp_max = exp + stddev * ((self.parts as f32).ln() * 2.).sqrt() as usize;
+        trace!("exp key/part: {exp:>10} stddev {stddev:>10}");
+        trace!(
+            "exp max k/pt: {exp_max:>10}        {:>10} {:>8.2}",
+            exp_max - exp,
+            (exp_max - exp) as f32 / stddev as f32
+        );
+        trace!(
+            "    max k/pt: {max_part_len:>10}        {:>10} {:>8.2}",
+            max_part_len - exp,
+            (max_part_len - exp) as f32 / stddev as f32
+        );
+        trace!(
+            "    slots/pt: {:>10}        {:>10} {:>8.2}",
+            self.slots,
+            self.slots - exp,
+            (self.slots - exp) as f32 / stddev as f32
+        );
+        trace!("exp    alpha: {:>13.2}%", 100. * self.params.alpha);
+        trace!(
+            "max    alpha: {:>13.2}%",
+            100. * max_part_len as f32 / self.slots as f32
+        );
 
         if max_part_len as usize > self.slots {
-            eprintln!(
+            trace!(
                     "Shard {shard}: Part has more elements than slots! elements {max_part_len} > {} slots",
                     self.slots
                 );
