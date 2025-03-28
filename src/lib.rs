@@ -179,9 +179,7 @@ impl PtrHashParams<CubicEps> {
             print_stats: false,
         }
     }
-}
 
-impl Default for PtrHashParams<CubicEps> {
     /// Default 'compact' parameters:
     /// - `alpha=0.99`
     /// - `lambda=3.5`
@@ -199,6 +197,12 @@ impl Default for PtrHashParams<CubicEps> {
             sharding: Sharding::None,
             print_stats: false,
         }
+    }
+}
+
+impl Default for PtrHashParams<CubicEps> {
+    fn default() -> Self {
+        Self::default()
     }
 }
 
@@ -225,13 +229,13 @@ type PilotHash = u64;
 /// PtrHash datastructure.
 /// It is recommended to use PtrHash with default types.
 ///
-/// `Key`: The type of keys to hash.
-/// `BF`: The bucket function to use. Inferred from `PtrHashParams` when calling `PtrHash::new()`.
-/// `F`: The packing to use for remapping free slots, default `CachelineEf`.
-/// `Hx`: The hasher to use for keys, default `FxHash`, but consider
+/// - `Key`: The type of keys to hash.
+/// - `BF`: The bucket function to use. Inferred from `PtrHashParams` when calling `PtrHash::new()`.
+/// - `F`: The packing to use for remapping free slots, default `CachelineEf`.
+/// - `Hx`: The hasher to use for keys, default `FxHash`, but consider
 ///       `hash::Xx64` for strings, or `hash::Xx128` when the number of keys is very
 ///       large.
-/// `V`: The pilots type. Usually `Vec<u8>`, or `&[u8]` for Epserde.
+/// - `V`: The pilots type. Usually `Vec<u8>`, or `&[u8]` for Epserde.
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone, MemSize)]
 pub struct PtrHash<
@@ -296,7 +300,7 @@ where
 {
     fn default() -> Self {
         PtrHash {
-            params: PtrHashParams::default(),
+            params: <PtrHashParams<BF> as Default>::default(),
 
             n: 0,
             parts: 0,
@@ -364,23 +368,6 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
     ) -> Self {
         let mut ptr_hash = Self::init(n, params);
         ptr_hash.compute_pilots(keys);
-        ptr_hash
-    }
-
-    /// PtrHash with random pilots, for benchmarking query speed.
-    pub fn new_random(n: usize, params: PtrHashParams<BF>) -> Self {
-        let mut ptr_hash = Self::init(n, params);
-        let k = (0..ptr_hash.buckets_total)
-            .map(|i| (i % 256) as Pilot)
-            .collect();
-        ptr_hash.pilots = MutPacked::new(k);
-        let rem_s_total = FastReduce::new(ptr_hash.slots_total);
-        let mut remap_vals = (ptr_hash.n..ptr_hash.slots_total)
-            .map(|_| rem_s_total.reduce(random::<u64>()) as _)
-            .collect_vec();
-        remap_vals.radix_sort_unstable();
-        ptr_hash.remap = MutPacked::new(remap_vals);
-        ptr_hash.print_bits_per_element();
         ptr_hash
     }
 

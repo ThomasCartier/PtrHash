@@ -5,11 +5,6 @@ use std::{
 };
 
 use clap::builder::PossibleValue;
-use common_traits::ToBytes;
-use epserde::{
-    deser::{DeserializeInner, ReadNoStd},
-    ser::SerializeInner,
-};
 
 use super::*;
 
