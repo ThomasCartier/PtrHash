@@ -142,22 +142,22 @@ impl MulHash {
 }
 impl Hasher<u64> for MulHash {
     type H = u64;
-    fn hash(x: &u64, _seed: u64) -> u64 {
-        Self::C.wrapping_mul(*x)
+    fn hash(x: &u64, seed: u64) -> u64 {
+        Self::C.wrapping_mul(*x ^ seed)
     }
 }
 impl Hasher<u64> for NoHash {
     type H = u64;
-    fn hash(x: &u64, _seed: u64) -> u64 {
-        *x
+    fn hash(x: &u64, seed: u64) -> u64 {
+        *x ^ seed
     }
 }
 
 // B. Fast hashers that are always included.
 impl<Key: KeyT> Hasher<Key> for FxHash {
     type H = u64;
-    fn hash(x: &Key, _seed: u64) -> u64 {
-        fxhash::hash64(x)
+    fn hash(x: &Key, seed: u64) -> u64 {
+        fxhash::hash64(x) ^ seed
     }
 }
 
