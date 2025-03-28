@@ -139,8 +139,9 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "cacheline-ef"
-version = "0.1.0"
-source = "git+https://github.com/ragnargrootkoerkamp/cacheline-ef#988e59d41ae633a63f389d6563ab4f731a92a126"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b47abfd5830c3746c8833ff9f401c35320627a297916adbf9d9f96362dfee3ea"
 dependencies = [
  "common_traits",
  "epserde",

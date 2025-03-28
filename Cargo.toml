@@ -42,7 +42,7 @@ fastrand = "2.0.1"
 serde = { version = "1.0.215", features = ["derive"] }
 mem_dbg = "0.3.0"
 
-cacheline-ef = { git = "https://github.com/ragnargrootkoerkamp/cacheline-ef" }
+cacheline-ef = "1.0.0"
 
 # Default included hash functions
 fxhash = "0.2.1"
