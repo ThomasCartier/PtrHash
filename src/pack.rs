@@ -19,9 +19,9 @@ pub trait Packed: Sync {
 }
 
 /// An extension of Packed that can be used during construction.
-pub trait MutPacked: Packed {
+pub trait MutPacked: Packed + Sized {
     fn default() -> Self;
-    fn new(vals: Vec<u64>) -> Self;
+    fn try_new(vals: Vec<u64>) -> Option<Self>;
     fn name() -> String;
 }
 
@@ -31,13 +31,15 @@ macro_rules! vec_impl {
             fn default() -> Self {
                 Default::default()
             }
-            fn new(vals: Vec<u64>) -> Self {
-                vals.into_iter()
-                    .map(|x| {
-                        x.try_into()
-                            .expect(&format!("Value {x} is larger than backing type can hold."))
-                    })
-                    .collect()
+            fn try_new(vals: Vec<u64>) -> Option<Self> {
+                Some(
+                    vals.into_iter()
+                        .map(|x| {
+                            x.try_into()
+                                .expect(&format!("Value {x} is larger than backing type can hold."))
+                        })
+                        .collect(),
+                )
             }
             fn name() -> String {
                 stringify!(Vec<$t>).to_string()
@@ -87,8 +89,8 @@ impl MutPacked for CachelineEfVec<Vec<CachelineEf>> {
     fn default() -> Self {
         Default::default()
     }
-    fn new(vals: Vec<u64>) -> Self {
-        Self::new(&vals)
+    fn try_new(vals: Vec<u64>) -> Option<Self> {
+        Self::try_new(&vals)
     }
     fn name() -> String {
         "CacheLineEF".to_string()
@@ -115,14 +117,14 @@ impl MutPacked for EliasFano {
         EliasFano(Default::default())
     }
 
-    fn new(vals: Vec<u64>) -> Self {
+    fn try_new(vals: Vec<u64>) -> Option<Self> {
         if vals.is_empty() {
-            Self::default()
+            Some(Self::default())
         } else {
             let mut builder =
                 EliasFanoBuilder::new(*vals.last().unwrap() as usize + 1, vals.len()).unwrap();
             builder.extend(vals.iter().map(|&x| x as usize)).unwrap();
-            EliasFano(builder.build())
+            Some(EliasFano(builder.build()))
         }
     }
     fn name() -> String {

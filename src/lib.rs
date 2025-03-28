@@ -533,6 +533,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                 // Determine the buckets.
                 let start = std::time::Instant::now();
                 let Some((hashes, part_starts)) = self.sort_parts(shard, hashes) else {
+                    eprintln!("Found duplicate hashes");
                     // Found duplicate hashes.
                     continue 's;
                 };
@@ -545,8 +546,17 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
                     stats.merge(shard_stats);
                     log_duration("find pilots", start);
                 } else {
+                    eprintln!("Could not find pilots");
                     continue 's;
                 }
+            }
+
+            let start = std::time::Instant::now();
+            let remap = self.remap_free_slots(&taken);
+            log_duration("remap free", start);
+            if remap.is_err() {
+                eprintln!("Failed to construct CachelineEF");
+                continue 's;
             }
 
             // Found a suitable seed.
@@ -557,10 +567,6 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             break 's stats;
         };
 
-        let start = std::time::Instant::now();
-        self.remap_free_slots(taken);
-        log_duration("remap free", start);
-
         // Pack the data.
         self.pilots = pilots;
 
@@ -569,7 +575,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
         Some(stats)
     }
 
-    fn remap_free_slots(&mut self, taken: Vec<BitVec>) {
+    fn remap_free_slots(&mut self, taken: &Vec<BitVec>) -> Result<(), ()> {
         assert_eq!(
             taken.iter().map(|t| t.count_zeros()).sum::<usize>(),
             self.slots_total - self.n,
@@ -579,7 +585,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
         );
 
         if !self.params.remap || self.slots_total == self.n {
-            return;
+            return Ok(());
         }
 
         // Compute the free spots.
@@ -600,12 +606,13 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
             v.push(i as u64);
         }
         eprintln!("Remap len: {}", v.len());
-        self.remap = MutPacked::new(v);
+        self.remap = MutPacked::try_new(v).ok_or(())?;
         eprintln!(
             "Remap size: {}MB = {}B",
             self.remap.size_in_bytes() / 1_000_000,
             self.remap.size_in_bytes()
         );
+        Ok(())
     }
 }
 
@@ -656,6 +663,8 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
     }
 
     /// Faster version of `index` for when there is only a single part.
+    /// Use only when there is indeed a single part, i.e., after constructing
+    /// with [`PtrHashParams::single_part`] set to `true`.
     #[inline]
     pub fn index_single_part(&self, key: &Key) -> usize {
         let hx = self.hash_key(key);
