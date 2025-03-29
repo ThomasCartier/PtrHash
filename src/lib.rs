@@ -987,6 +987,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
 
     /// Slot uses the 64 low bits of the hash.
     fn slot_in_part_hp(&self, hx: Hx::H, hp: PilotHash) -> usize {
-        self.rem_slots.reduce(MulHash::C * (hx.low() ^ hp))
+        self.rem_slots
+            .reduce(MulHash::C.wrapping_mul(hx.low() ^ hp))
     }
 }
