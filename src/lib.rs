@@ -23,6 +23,9 @@
 //! let keys = ptr_hash::util::generate_keys(n);
 //!
 //! // Build the datastructure.
+//! // NOTE: For small sets, say <1M keys, use `PtrHashParams::default_fast()` instead.
+//! // The default parameters are optimized for large sets, and need large (>100k or so) inputs
+//! // to ensure internal bucket sizes don't deviate too much from their expectation.
 //! let mphf = <PtrHash>::new(&keys, PtrHashParams::default());
 //!
 //! // Get the index of a key.
@@ -140,12 +143,12 @@ pub struct PtrHashParams<BF> {
 }
 
 impl PtrHashParams<Linear> {
-    /// Default 'fast' parameters:
+    /// Parameters for fast construction and for small inputs <1M keys.
+    ///
+    /// Takes `3.0` bits/key, and can be up to 2x faster to query than the default version.
     /// - `alpha=0.99`
     /// - `lambda=3.0`
     /// - `bucket_fn=Linear`
-    ///
-    /// Takes `3.0` bits/key, and can be up to 2x faster to query than the default version.
     pub fn default_fast() -> Self {
         Self {
             remap: true,
@@ -175,12 +178,12 @@ impl PtrHashParams<SquareEps> {
 }
 
 impl PtrHashParams<CubicEps> {
-    /// Default parameters:
+    /// Default parameters for inputs >1M keys.
+    ///
+    /// Takes `2.4` bits/key, and trades off space and speed.
     /// - `alpha=0.99`
     /// - `lambda=3.5`
     /// - `bucket_fn=CubicEps`
-    ///
-    /// Gives size `2.4` bits/key, and trades off space and speed.
     pub fn default() -> Self {
         Self {
             remap: true,
@@ -193,18 +196,18 @@ impl PtrHashParams<CubicEps> {
         }
     }
 
-    /// Default 'compact' parameters:
+    /// Default 'compact' parameters.
+    ///
+    /// Takes `2.1` bits/key, but is typically 2x slower to construct than the default version.
+    /// This occasionally fails construction. If so, try again with decreased `lambda`.
     /// - `alpha=0.99`
     /// - `lambda=4.0`
     /// - `bucket_fn=CubicEps`
-    ///
-    /// Takes `2.1` bits/key, but is typically 2x slower to construct than the default version.
-    /// This occasionally fails construction. If so, try again or use lambda=3.9.
     pub fn default_compact() -> Self {
         Self {
             remap: true,
             alpha: 0.99,
-            lambda: 4.0,
+            lambda: 3.9,
             bucket_fn: CubicEps,
             keys_per_shard: 1 << 31,
             sharding: Sharding::None,

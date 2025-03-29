@@ -5,7 +5,7 @@ fn main() {
     env_logger::init();
 
     // Generate some random keys.
-    let n = 1000_000_000;
+    let n = 10_000_000;
     eprintln!("Generating keys..");
     let keys = ptr_hash::util::generate_keys(n);
 
