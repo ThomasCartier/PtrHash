@@ -47,6 +47,16 @@ PtrHash supports up to `2^40` keys. For default parameters, constructing a MPHF 
 Query throughput per thread fully saturates the prefetching bandwidth of each
 core, and multithreaded querying fully saturates the DDR4 memory bandwidth.
 
+## Input
+
+PtrHash is primarily intended to be used on large sets of keys, say of size at
+least 1 million. Nevertheless, it can also be used for sets as small as e.g. 10
+keys. In this case, there will be a relatively large constant space overhead,
+and other methods may be smaller and/or faster.
+(PtrHash should still be fast, but the small probability of having to remap
+values may be slow compared to methods designed for small inputs.)
+
+
 ## Usage
 
 Below, we use `PtrHashParams::default()` for a reasonable tradeoff between size

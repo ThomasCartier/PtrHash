@@ -1,6 +1,15 @@
 #![cfg_attr(feature = "unstable", feature(iter_array_chunks))]
 //! # PtrHash: Minimal Perfect Hashing at RAM Throughput
 //!
+//! PtrHash builds a _minimal perfect hash function_, that is,
+//! a hash function that maps a fixed set of keys to `{0, ..., n-1}`.
+//!
+//! PtrHash was developed for large key sets of at least 1 million keys, and has been tested up to 10^11 keys.
+//! It only uses 2.4 bits per key.
+//!
+//! It can also be used for arbitrary small sets.
+//! In this case, the space efficiency will be less due to a relatively large constant overhead.
+//!
 //! See the GitHub [readme](https://github.com/ragnargrootkoerkamp/ptrhash)
 //! or paper ([arXiv](https://arxiv.org/abs/2502.15539), [blog version](https://curiouscoding.nl/posts/ptrhash/))
 //! for details on the algorithm and performance.
@@ -328,8 +337,12 @@ where
 impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx, Vec<u8>> {
     /// Create a new PtrHash instance from the given keys.
     ///
-    /// Use `<PtrHash>::new()` or `LargePtrHash::new()` instead of simply `PtrHash::new()` to
-    /// get the appropriate defaults for the generics.
+    /// Use `<PtrHash>::new()` or `DefaultPtrHash::new()` instead of simply `PtrHash::new()` to
+    /// get the default values for the generics.
+    ///
+    /// NOTE: This panics when construction fails after 10 attempts.
+    /// This should be rare, but can happen if we are unlucky with the rng seeds.
+    /// Consider calling [`PtrHash::try_new()`] instead.
     ///
     /// NOTE: Only up to 2^40 keys are supported.
     pub fn new(keys: &[Key], params: PtrHashParams<BF>) -> Self {
