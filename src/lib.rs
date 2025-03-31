@@ -35,7 +35,9 @@
 //!
 //! // Get the non-minimal index of a key.
 //! // Can be slightly faster returns keys up to `n/alpha ~ 1.01*n`.
-//! let _idx = mphf.index_no_remap(&key);
+//! let idx = mphf.index_no_remap(&key);
+//! // `max_index` returns an upper bound on the non-remapped index.
+//! assert!(idx < mphf.max_index());
 //!
 //! // An iterator over the indices of the keys.
 //! // 32: number of iterations ahead to prefetch.
@@ -624,7 +626,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
         self.n
     }
 
-    /// `self.index()` always returns below this bound.
+    /// `self.index_no_remap()` always returns below this bound.
     /// Should be around `n/alpha ~ 1.01*n`.
     pub fn max_index(&self) -> usize {
         self.slots_total
