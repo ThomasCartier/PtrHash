@@ -193,11 +193,13 @@ mod test {
         let mut skewed = Skewed::new(0.6, 0.3);
         skewed.set_buckets_per_part(1000000000);
 
+        let mut last_y = 0;
         let n = 100;
         for i in 0..100 {
             let x = u64::MAX / n * i;
             let y = skewed.call(x);
-            println!("{x:>20} => {y:>20}");
+            assert!(y >= last_y);
+            last_y = y;
         }
     }
 }

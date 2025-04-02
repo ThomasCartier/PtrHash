@@ -3,15 +3,42 @@ use crate::util::generate_keys;
 
 /// Construct the MPHF and test all keys are mapped to unique indices.
 #[test]
-fn construct() {
-    for n in [2, 10, 100, 1000, 10_000, 100_000, 1_000_000, 10_000_000] {
+fn construct_random() {
+    for n in (0..10).chain([
+        10, 30, 100, 300, 1000, 3000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000,
+        10_000_000,
+    ]) {
+        eprintln!("RANDOM Testing n = {}", n);
         let keys = generate_keys(n);
-        let ptr_hash = <PtrHash>::new(&keys, Default::default());
+        let ptr_hash = DefaultPtrHash::<IntHash, _, _>::new(&keys, PtrHashParams::default_fast());
         let mut done = bitvec![0; n];
         for key in keys {
             let idx = ptr_hash.index(&key);
             assert!(!done[idx]);
             done.set(idx, true);
+        }
+    }
+}
+
+/// Keys are multiples of 1, 2^40, and 10^12
+#[test]
+fn construct_multiples() {
+    env_logger::init();
+    for m in [1, 1 << 40, 1_000_000_000_000, 3u64.pow(23)] {
+        for n in (0..10).chain([
+            10, 30, 100, 300, 1000, 3000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000,
+            10_000_000,
+        ]) {
+            eprintln!("MULTIPLES OF {m} Testing n = {}", n);
+            let keys = (0..n as u64).map(|i| m * i).collect::<Vec<_>>();
+            let ptr_hash =
+                DefaultPtrHash::<IntHash, _, _>::new(&keys, PtrHashParams::default_fast());
+            let mut done = bitvec![0; n];
+            for key in keys {
+                let idx = ptr_hash.index(&key);
+                assert!(!done[idx]);
+                done.set(idx, true);
+            }
         }
     }
 }
@@ -50,7 +77,7 @@ fn in_memory_sharding() {
     let n = 1 << 25;
     let range = 0..n as u64;
     let keys = range.clone().into_par_iter();
-    let ptr_hash = <PtrHash<_, _, CachelineEfVec, FxHash, _>>::new_from_par_iter(
+    let ptr_hash = <PtrHash<_, _, CachelineEfVec, IntHash, _>>::new_from_par_iter(
         n,
         keys.clone(),
         PtrHashParams {
@@ -73,7 +100,7 @@ fn on_disk_sharding() {
     let n = 1 << 25;
     let range = 0..n as u64;
     let keys = range.clone().into_par_iter();
-    let ptr_hash = <PtrHash<_, _, CachelineEfVec, FxHash, _>>::new_from_par_iter(
+    let ptr_hash = <PtrHash<_, _, CachelineEfVec, IntHash, _>>::new_from_par_iter(
         n,
         keys.clone(),
         PtrHashParams {
@@ -99,7 +126,7 @@ fn many_keys_memory() {
     let n_query = 1 << 27;
     let range = 0..n as u64;
     let keys = range.clone().into_par_iter();
-    let ptr_hash = <PtrHash<_, _, CachelineEfVec, FxHash, _>>::new_from_par_iter(
+    let ptr_hash = <PtrHash<_, _, CachelineEfVec, IntHash, _>>::new_from_par_iter(
         n,
         keys.clone(),
         PtrHashParams {
@@ -129,7 +156,7 @@ fn many_keys_disk() {
     let n_query = 1 << 27;
     let range = 0..n as u64;
     let keys = range.clone().into_par_iter();
-    let ptr_hash = <PtrHash<_, _, CachelineEfVec, FxHash, _>>::new_from_par_iter(
+    let ptr_hash = <PtrHash<_, _, CachelineEfVec, IntHash, _>>::new_from_par_iter(
         n,
         keys.clone(),
         PtrHashParams {
@@ -153,7 +180,7 @@ fn many_keys_disk() {
 
 #[test]
 fn ptr_hash_can_clone() {
-    let ptr_hash = PtrHash::<_>::new(&["hello", "there"], PtrHashParams::default());
+    let ptr_hash = PtrHash::<_>::new(&[0, 1], PtrHashParams::default());
 
     // test succeeds if this compiles
     let _y = ptr_hash.clone();
