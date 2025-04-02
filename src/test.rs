@@ -185,3 +185,74 @@ fn ptr_hash_can_clone() {
     // test succeeds if this compiles
     let _y = ptr_hash.clone();
 }
+
+#[test]
+fn integer_key_types() {
+    let h = PtrHash::<_>::new(&[0u8], PtrHashParams::default());
+    h.index(&0u8);
+    let h = PtrHash::<_>::new(&[0u16], PtrHashParams::default());
+    h.index(&0u16);
+    let h = PtrHash::<_>::new(&[0u32], PtrHashParams::default());
+    h.index(&0u32);
+    let h = PtrHash::<_>::new(&[0u64], PtrHashParams::default());
+    h.index(&0u64);
+    let h = PtrHash::<_>::new(&[0usize], PtrHashParams::default());
+    h.index(&0usize);
+    let h = PtrHash::<_>::new(&[0i8], PtrHashParams::default());
+    h.index(&0i8);
+    let h = PtrHash::<_>::new(&[0i16], PtrHashParams::default());
+    h.index(&0i16);
+    let h = PtrHash::<_>::new(&[0i32], PtrHashParams::default());
+    h.index(&0i32);
+    let h = PtrHash::<_>::new(&[0i64], PtrHashParams::default());
+    h.index(&0i64);
+    let h = PtrHash::<_>::new(&[0isize], PtrHashParams::default());
+    h.index(&0isize);
+}
+
+#[test]
+fn string_key_types() {
+    let h = DefaultPtrHash::<StringHash, &str>::new(&["a"], PtrHashParams::default());
+
+    // h.index("a");
+    h.index(&"a");
+    h.index(&"a".to_string().as_str());
+    h.index(&Box::new("a"));
+
+    // TODO: The below don't work yet.
+    // See https://github.com/beling/bsuccinct-rs/issues/9 for some comments.
+
+    // let h = DefaultPtrHash::<StringHash, &str>::new(&["a".to_string()], PtrHashParams::default());
+
+    // h.index(&&"a");
+    // h.index(&"a");
+    // h.index("a".to_string());
+    // h.index(&"a".to_string());
+    // h.index(Box::new("a"));
+    // h.index(&Box::new("a"));
+    // h.index(Box::new("a".to_string()));
+    // h.index(&Box::new("a".to_string()));
+
+    // let h = DefaultPtrHash::<StringHash, _>::new(&[Box::new("a")], PtrHashParams::default());
+    // h.index("a");
+    // h.index(&"a");
+    // h.index("a".to_string());
+    // h.index(&"a".to_string());
+    // h.index(Box::new("a"));
+    // h.index(&Box::new("a"));
+    // h.index(Box::new("a".to_string()));
+    // h.index(&Box::new("a".to_string()));
+
+    // let h = DefaultPtrHash::<StringHash, _>::new(
+    //     &[Box::new("a".to_string())],
+    //     PtrHashParams::default(),
+    // );
+    // h.index("a");
+    // h.index(&"a");
+    // h.index("a".to_string());
+    // h.index(&"a".to_string());
+    // h.index(Box::new("a"));
+    // h.index(&Box::new("a"));
+    // h.index(Box::new("a".to_string()));
+    // h.index(&Box::new("a".to_string()));
+}
