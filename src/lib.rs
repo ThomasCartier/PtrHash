@@ -84,6 +84,7 @@ pub mod util;
 pub mod bucket_fn;
 mod bucket_idx;
 mod build;
+mod fastmod;
 mod reduce;
 mod shard;
 mod sort_buckets;
@@ -98,6 +99,7 @@ use bucket_fn::CubicEps;
 use bucket_fn::Linear;
 use bucket_fn::SquareEps;
 use cacheline_ef::CachelineEfVec;
+use fastmod::FM32;
 use itertools::izip;
 use itertools::Itertools;
 use log::trace;
@@ -145,7 +147,7 @@ pub struct PtrHashParams<BF> {
 }
 
 impl PtrHashParams<Linear> {
-    /// Parameters for fast construction and for small inputs <1M keys.
+    /// Parameters for faster construction and querying, and for inputs <1M.
     ///
     /// Takes `3.0` bits/key, and can be up to 2x faster to query than the default version.
     /// - `alpha=0.99`
@@ -240,6 +242,7 @@ impl<T: Send + Sync + std::hash::Hash> KeyT for T {}
 // Some fixed algorithmic decisions.
 type Rp = FastReduce;
 type Rb = FastReduce;
+type RemSlots = FM32;
 type Pilot = u64;
 type PilotHash = u64;
 
@@ -293,7 +296,7 @@ pub struct PtrHash<
     rem_buckets_total: Rb,
 
     /// Fast %s when there is only a single part.
-    rem_slots: Rp,
+    rem_slots: RemSlots,
 
     // Computed state.
     /// The global seed.
@@ -328,7 +331,7 @@ where
             rem_parts: FastReduce::new(0),
             rem_buckets: FastReduce::new(0),
             rem_buckets_total: FastReduce::new(0),
-            rem_slots: FastReduce::new(0),
+            rem_slots: RemSlots::new(0),
             seed: 0,
             pilots: vec![],
             remap: F::default(),
@@ -352,7 +355,9 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: KeyHasher<Key>> PtrHash<Key, BF,
     /// NOTE: Only up to 2^40 keys are supported.
     pub fn new(keys: &[Key], params: PtrHashParams<BF>) -> Self {
         let mut ptr_hash = Self::init(keys.len(), params);
-        ptr_hash.compute_pilots(keys.par_iter()).unwrap();
+        ptr_hash
+            .compute_pilots(keys.par_iter())
+            .expect("Unable to construct PtrHash after 10 tries. Try using a better hash or decreasing lambda.");
         ptr_hash
     }
 
@@ -360,7 +365,9 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: KeyHasher<Key>> PtrHash<Key, BF,
     #[doc(hidden)]
     pub fn new_with_stats(keys: &[Key], params: PtrHashParams<BF>) -> (Self, BucketStats) {
         let mut ptr_hash = Self::init(keys.len(), params);
-        let stats = ptr_hash.compute_pilots(keys.par_iter()).unwrap();
+        let stats = ptr_hash
+            .compute_pilots(keys.par_iter())
+            .expect("Unable to construct PtrHash after 10 tries. Try using a better hash or decreasing lambda.");
         (ptr_hash, stats)
     }
 
@@ -422,6 +429,10 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: KeyHasher<Key>> PtrHash<Key, BF,
             keys_per_part = n / parts;
             parts_per_shard = parts / shards;
             slots_per_part = (keys_per_part as f64 / params.alpha) as usize;
+            // Avoid powers of two, since then %S does not depend on all bits.
+            if slots_per_part.is_power_of_two() {
+                slots_per_part += 1;
+            }
             slots_total = parts * slots_per_part;
             // Add a few extra buckets to avoid collisions for small n.
             buckets_per_part = (keys_per_part as f64 / params.lambda).ceil() as usize + 3;
@@ -476,7 +487,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: KeyHasher<Key>> PtrHash<Key, BF,
             rem_parts: Rp::new(parts),
             rem_buckets: Rb::new(buckets_per_part),
             rem_buckets_total: Rb::new(buckets_total),
-            rem_slots: Rp::new(slots_per_part),
+            rem_slots: RemSlots::new(slots_per_part.max(1)), // fix for n=0
             seed: 0,
             pilots: Default::default(),
             remap: F::default(),
@@ -942,7 +953,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: KeyHasher<Key>, V: AsRef<[u8]>>
     }
 
     fn hash_pilot(&self, p: Pilot) -> PilotHash {
-        MulHash::hash(&p, self.seed)
+        hash::C.wrapping_mul(p ^ self.seed)
     }
 
     fn shard(&self, hx: Hx::H) -> usize {
@@ -992,7 +1003,6 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: KeyHasher<Key>, V: AsRef<[u8]>>
 
     /// Slot uses the 64 low bits of the hash.
     fn slot_in_part_hp(&self, hx: Hx::H, hp: PilotHash) -> usize {
-        self.rem_slots
-            .reduce(MulHash::C.wrapping_mul(hx.low() ^ hp))
+        self.rem_slots.reduce(hx.low() ^ hp)
     }
 }

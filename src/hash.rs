@@ -21,7 +21,7 @@
 //! interface.
 //!
 use crate::KeyT;
-use std::{borrow::Borrow, collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
 /// The [`KeyHasher`] trait returns a 64 or 128-bit `Hash`. From this, two `u64` values are extracted.
 ///

@@ -789,8 +789,6 @@ fn string_queries() {
             test::<R, _, StringHash128>(&keys, PARAMS_FAST, &mut results);
         }
 
-        continue;
-
         // BOXED INT
         {
             let keys: Vec<Box<u64>> = generate_keys(n).into_iter().map(|k| Box::new(k)).collect();
