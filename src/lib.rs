@@ -230,7 +230,7 @@ impl Default for PtrHashParams<CubicEps> {
 /// [`DefaultPtrHash`] fills in most values.
 ///
 /// Use this as [`DefaultPtrHash::new()`] or `<DefaultPtrHash>::new()`.
-pub type DefaultPtrHash<Hx = hash::FxHash, Key = u64, BF = bucket_fn::CubicEps> =
+pub type DefaultPtrHash<Hx = hash::IntHash, Key = u64, BF = bucket_fn::CubicEps> =
     PtrHash<Key, BF, CachelineEfVec, Hx, Vec<u8>>;
 
 /// Trait that keys must satisfy.
@@ -259,7 +259,7 @@ pub struct PtrHash<
     Key: KeyT + ?Sized = u64,
     BF: BucketFn = bucket_fn::CubicEps,
     F: Packed = CachelineEfVec,
-    Hx: Hasher<Key> = hash::FxHash,
+    Hx: KeyHasher<Key> = hash::IntHash,
     V: AsRef<[u8]> = Vec<u8>,
 > {
     params: PtrHashParams<BF>,
@@ -307,7 +307,7 @@ pub struct PtrHash<
 }
 
 /// An empty PtrHash instance. Mostly useless, but may be convenient.
-impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> Default
+impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: KeyHasher<Key>> Default
     for PtrHash<Key, BF, F, Hx, Vec<u8>>
 where
     PtrHashParams<BF>: Default,
@@ -339,7 +339,7 @@ where
 }
 
 /// Construction methods.
-impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx, Vec<u8>> {
+impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: KeyHasher<Key>> PtrHash<Key, BF, F, Hx, Vec<u8>> {
     /// Create a new PtrHash instance from the given keys.
     ///
     /// Use `<PtrHash>::new()` or `DefaultPtrHash::new()` instead of simply `PtrHash::new()` to
@@ -611,7 +611,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: Hasher<Key>> PtrHash<Key, BF, F,
 }
 
 /// Indexing methods.
-impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
+impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: KeyHasher<Key>, V: AsRef<[u8]>>
     PtrHash<Key, BF, F, Hx, V>
 {
     /// Return the number of bits per element used for the pilots (`.0`) and the
@@ -724,7 +724,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
             KeyIt: Iterator<Item = Q> + 'a,
             BF: BucketFn,
             F: Packed,
-            Hx: Hasher<Key>,
+            Hx: KeyHasher<Key>,
             V: AsRef<[u8]>,
         > {
             ph: &'a PtrHash<Key, BF, F, Hx, V>,
@@ -743,7 +743,7 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>, V: AsRef<[u8]>>
                 KeyIt: Iterator<Item = Q> + 'a,
                 BF: BucketFn,
                 F: Packed,
-                Hx: Hasher<Key>,
+                Hx: KeyHasher<Key>,
                 V: AsRef<[u8]>,
             > Iterator for It<'a, B, MINIMAL, Key, Q, KeyIt, BF, F, Hx, V>
         {

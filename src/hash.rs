@@ -1,10 +1,29 @@
-//! Implementations of the `Hash` trait that abstracts over 64 and 128-bit hashes.
-use mem_dbg::MemSize;
-
+//! Implementations of various hashers to use with PtrHash.
+//!
+//! ## Integer keys
+//!
+//! For hashing keys, prefer [`IntHash`].
+//! If input keys are sufficiently random, [`RandomIntHash`] is slightly faster, which is an alias for [`FxHash`].
+//! For truly random keys, one could even use [`NoHash`], but this is mostly just a baseline for benchmarks.
+//!
+//! If [`IntHash`] lacks sufficient randomness, use [`Xxh3Int`] instead, which is considerably slower but much stronger.
+//!
+//! ## String keys
+//!
+//! For string keys, use [`StringHash`] for 64-bit hashes and [`StringHash128`] for 128-bit hashes.
+//! These are aliases for 64bit and 128bit versions of xxhash (XXH3), respectively.
+//!
+//! Another option is to use [`FxHash`] instead.
+//!
+//! In general any type implementing `Hasher` can be used, but it may be more
+//! efficient to implement [`KeyHasher`] yourself for your key type, to directly
+//! call specialized functions rather than going through the generic `Hasher`
+//! interface.
+//!
 use crate::KeyT;
-use std::fmt::Debug;
+use std::{borrow::Borrow, collections::HashMap, fmt::Debug};
 
-/// The `Hasher` trait returns a 64 or 128-bit `Hash`. From this, two `u64` values are extracted.
+/// The [`KeyHasher`] trait returns a 64 or 128-bit `Hash`. From this, two `u64` values are extracted.
 ///
 /// When 64-bit hashes are enough, we simply return the same hash (the `u64`
 /// `Self` value) as the low and high part.
@@ -39,337 +58,105 @@ impl Hash for u128 {
 }
 
 /// Wrapper trait for various hash functions.
-pub trait Hasher<Key: ?Sized>: Clone + Sync {
+pub trait KeyHasher<Key: ?Sized>: Clone + Sync {
     type H: Hash;
     fn hash(x: &Key, seed: u64) -> Self::H;
 }
 
-fn to_bytes<Key: ?Sized>(x: &Key) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(x as *const Key as *const u8, std::mem::size_of_val(x)) }
+/// All external hashers work.
+impl<Key: KeyT, H: core::hash::Hasher + Default + Clone + Sync> KeyHasher<Key> for H {
+    type H = u64;
+    #[inline(always)]
+    fn hash(x: &Key, seed: u64) -> u64 {
+        let mut hasher = H::default();
+        Key::hash(x, &mut hasher);
+        hasher.finish() ^ seed
+    }
 }
 
-// A. u64-only hashers
-/// Multiply the key by a mixing constant.
+// Aliases
+
+/// A slightly faster but weaker hash for sufficiently random integers. Uses [`fxhash::FxHasher64`].
+pub type RandomIntHash = fxhash::FxHasher64;
+pub type FxHash = fxhash::FxHasher64;
+/// Use [`xxhash_rust::xxh3::Xxh3Default`] implementation of XXH3 for 64-bit string hashing.
+pub type StringHash = xxhash_rust::xxh3::Xxh3Default;
+/// Type alias for xxhash (XXH3) hasher.
+///
+/// Prefer [`Xxh3Int`] for integers, which avoids some overhead of the default hasher.
+pub type Xxh3 = xxhash_rust::xxh3::Xxh3Default;
+/// Use [`xxhash_rust::xxh3::Xxh3Default`] implementation of XXH3 for 128-bit string hashing.
+pub type StringHash128 = Xxh3_128;
+
+// Implementations
+
+/// 128-bit version of XXH3.
+#[derive(Clone)]
+pub struct Xxh3_128;
+impl<Key: KeyT> KeyHasher<Key> for Xxh3_128 {
+    type H = u128;
+    #[inline(always)]
+    fn hash(x: &Key, seed: u64) -> u128 {
+        let mut hasher = xxhash_rust::xxh3::Xxh3Default::default();
+        x.hash(&mut hasher);
+        hasher.digest128() ^ (seed as u128 | (seed as u128) << 64)
+    }
+}
+
+/// A sufficiently good hash for non-random integers.
+///
+/// ```ignore
+/// let (hi, lo) = (value ^ seed).wrapping_mul(C);
+/// return (hi ^ lo).wrapping_mul(C);
+/// ```
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
-pub struct MulHash;
-/// Pass the key through unchanged.
-/// Used for benchmarking.
+pub struct IntHash;
+
+/// Mixing constant.
+pub const C: u64 = 0x517cc1b727220a95;
+
+/// No hash at all; just `value ^ seed`. Use with caution. Mostly for benchmarking.
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
 pub struct NoHash;
 
-// B. Fast hashers that are always included.
-/// Good for hashing `u64` and smaller keys.
-/// Note that this doesn't use a seed, so while it is a bijection on `u64` keys,
-/// larger keys will give unfixable collisions.
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone, MemSize)]
-pub struct FxHash;
-/// Default hash function for strings.
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone, MemSize)]
-pub struct Xx64;
-/// Fast good 128bit hash, when hashing >>10^9 keys.
+/// Inlined version of Xxh3 for integer keys.
 #[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
 #[derive(Clone)]
-pub struct Xx128;
+pub struct Xxh3Int;
 
-/// Very fast weak 64bit hash with more quality than FxHash.
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Murmur2_64;
-/// Fast weak 128bit hash for integers.
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct FastMurmur3_128;
+// Macro to implement hashes for all integer types.
+macro_rules! int_hashers {
+    ($($t:ty),*) => {
+        $(
+            impl KeyHasher<$t> for NoHash {
+                type H = u64;
+                #[inline(always)]
+                fn hash(x: &$t, seed: u64) -> u64 {
+                    *x as u64 ^ seed
+                }
+            }
 
-// C. Additional higher quality but slower hashers.
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Murmur3_128;
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Highway64;
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Highway128;
-/// Fast good 64bit hash.
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct City64;
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct City128;
-/// Fast good 64bit hash.
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Wy64;
+            impl KeyHasher<$t> for IntHash {
+                type H = u64;
+                #[inline(always)]
+                fn hash(x: &$t, seed: u64) -> u64 {
+                    let r = (*x as u64 ^ seed) as u128 * C as u128;
+                    let low = r as u64;
+                    let high = (r >> 64) as u64;
+                    (low ^ high).wrapping_mul(C)
+                }
+            }
 
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Metro64;
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Metro128;
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Spooky64;
-#[cfg(feature = "hashers")]
-#[cfg_attr(feature = "epserde", derive(epserde::prelude::Epserde))]
-#[derive(Clone)]
-pub struct Spooky128;
-
-// Hash implementations.
-
-// A. u64-only hashers.
-impl MulHash {
-    // Reuse the mixing constant from MurmurHash.
-    // pub const C: u64 = 0xc6a4a7935bd1e995;
-    // Reuse the mixing constant from FxHash.
-    pub const C: u64 = 0x517cc1b727220a95;
+            impl KeyHasher<$t> for Xxh3Int {
+                type H = u64;
+                #[inline(always)]
+                fn hash(x: &$t, seed: u64) -> u64 {
+                    xxhash_rust::xxh3::xxh3_64_with_seed(&(*x as u64).to_le_bytes(), seed)
+                }
+            }
+        )*
+    };
 }
-impl Hasher<u64> for MulHash {
-    type H = u64;
-    fn hash(x: &u64, seed: u64) -> u64 {
-        Self::C.wrapping_mul(*x ^ seed)
-    }
-}
-impl Hasher<u64> for NoHash {
-    type H = u64;
-    fn hash(x: &u64, seed: u64) -> u64 {
-        *x ^ seed
-    }
-}
-
-// B. Fast hashers that are always included.
-impl<Key: KeyT> Hasher<Key> for FxHash {
-    type H = u64;
-    fn hash(x: &Key, seed: u64) -> u64 {
-        fxhash::hash64(x) ^ seed
-    }
-}
-
-// XX64
-
-impl Hasher<u64> for Xx64 {
-    type H = u64;
-    #[inline(always)]
-    fn hash(x: &u64, seed: u64) -> u64 {
-        xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(x), seed)
-    }
-}
-impl Hasher<Box<u64>> for Xx64 {
-    type H = u64;
-    #[inline(always)]
-    fn hash(x: &Box<u64>, seed: u64) -> u64 {
-        let x = **x;
-        xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(&x), seed)
-    }
-}
-impl Hasher<[u8]> for Xx64 {
-    type H = u64;
-    #[inline(always)]
-    fn hash(x: &[u8], seed: u64) -> u64 {
-        xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(x), seed)
-    }
-}
-impl<const N: usize> Hasher<[u8; N]> for Xx64 {
-    type H = u64;
-    #[inline(always)]
-    fn hash(x: &[u8; N], seed: u64) -> u64 {
-        xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(x), seed)
-    }
-}
-impl Hasher<&[u8]> for Xx64 {
-    type H = u64;
-    #[inline(always)]
-    fn hash(x: &&[u8], seed: u64) -> u64 {
-        xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(*x), seed)
-    }
-}
-impl<const N: usize> Hasher<&[u8; N]> for Xx64 {
-    type H = u64;
-    #[inline(always)]
-    fn hash(x: &&[u8; N], seed: u64) -> u64 {
-        xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(x), seed)
-    }
-}
-impl Hasher<Vec<u8>> for Xx64 {
-    type H = u64;
-    #[inline(always)]
-    fn hash(x: &Vec<u8>, seed: u64) -> u64 {
-        xxhash_rust::xxh3::xxh3_64_with_seed(to_bytes(x.as_slice()), seed)
-    }
-}
-
-// XX128
-
-impl Hasher<u64> for Xx128 {
-    type H = u128;
-    #[inline(always)]
-    fn hash(x: &u64, seed: u64) -> u128 {
-        xxhash_rust::xxh3::xxh3_128_with_seed(to_bytes(x), seed)
-    }
-}
-impl Hasher<Box<u64>> for Xx128 {
-    type H = u128;
-    #[inline(always)]
-    fn hash(x: &Box<u64>, seed: u64) -> u128 {
-        let x = **x;
-        xxhash_rust::xxh3::xxh3_128_with_seed(to_bytes(&x), seed)
-    }
-}
-impl Hasher<[u8]> for Xx128 {
-    type H = u128;
-    #[inline(always)]
-    fn hash(x: &[u8], seed: u64) -> u128 {
-        xxhash_rust::xxh3::xxh3_128_with_seed(to_bytes(x), seed)
-    }
-}
-impl<const N: usize> Hasher<[u8; N]> for Xx128 {
-    type H = u128;
-    #[inline(always)]
-    fn hash(x: &[u8; N], seed: u64) -> u128 {
-        xxhash_rust::xxh3::xxh3_128_with_seed(to_bytes(x), seed)
-    }
-}
-impl Hasher<&[u8]> for Xx128 {
-    type H = u128;
-    #[inline(always)]
-    fn hash(x: &&[u8], seed: u64) -> u128 {
-        xxhash_rust::xxh3::xxh3_128_with_seed(to_bytes(*x), seed)
-    }
-}
-impl<const N: usize> Hasher<&[u8; N]> for Xx128 {
-    type H = u128;
-    #[inline(always)]
-    fn hash(x: &&[u8; N], seed: u64) -> u128 {
-        xxhash_rust::xxh3::xxh3_128_with_seed(to_bytes(x), seed)
-    }
-}
-impl Hasher<Vec<u8>> for Xx128 {
-    type H = u128;
-    #[inline(always)]
-    fn hash(x: &Vec<u8>, seed: u64) -> u128 {
-        xxhash_rust::xxh3::xxh3_128_with_seed(to_bytes(x.as_slice()), seed)
-    }
-}
-
-// Further hashes
-
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Murmur2_64 {
-    type H = u64;
-    fn hash(x: &Key, seed: u64) -> u64 {
-        murmur2::murmur64a(to_bytes(x), seed)
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for FastMurmur3_128 {
-    type H = u128;
-    fn hash(x: &Key, seed: u64) -> u128 {
-        fastmurmur3::murmur3_x64_128(to_bytes(x), seed)
-    }
-}
-
-// C. Further high quality hash functions.
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Murmur3_128 {
-    type H = u128;
-    fn hash(x: &Key, seed: u64) -> u128 {
-        let mut bytes = to_bytes(x);
-        murmur3::murmur3_x64_128(&mut bytes, seed as u32).unwrap()
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Highway64 {
-    type H = u64;
-    fn hash(x: &Key, _seed: u64) -> u64 {
-        use highway::HighwayHash;
-        highway::HighwayHasher::default().hash64(to_bytes(x))
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Highway128 {
-    type H = u128;
-    fn hash(x: &Key, _seed: u64) -> u128 {
-        use highway::HighwayHash;
-        let words = highway::HighwayHasher::default().hash128(to_bytes(x));
-        unsafe { std::mem::transmute(words) }
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for City64 {
-    type H = u64;
-    fn hash(x: &Key, _seed: u64) -> u64 {
-        cityhash_102_rs::city_hash_64(to_bytes(x))
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for City128 {
-    type H = u128;
-    fn hash(x: &Key, seed: u64) -> u128 {
-        cityhash_102_rs::city_hash_128_seed(to_bytes(x), seed as _)
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Wy64 {
-    type H = u64;
-    fn hash(x: &Key, seed: u64) -> u64 {
-        wyhash::wyhash(to_bytes(x), seed)
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Metro64 {
-    type H = u64;
-    fn hash(x: &Key, seed: u64) -> u64 {
-        use std::hash::Hasher;
-        let mut hasher = metrohash::MetroHash64::with_seed(seed);
-        hasher.write(to_bytes(x));
-        hasher.finish()
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Metro128 {
-    type H = u128;
-    fn hash(x: &Key, seed: u64) -> u128 {
-        use std::hash::Hasher;
-        let mut hasher = metrohash::MetroHash128::with_seed(seed);
-        hasher.write(to_bytes(x));
-        let (l, h) = hasher.finish128();
-        (h as u128) << 64 | l as u128
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Spooky64 {
-    type H = u64;
-    fn hash(x: &Key, seed: u64) -> u64 {
-        use std::hash::Hasher;
-        let mut hasher = hashers::jenkins::spooky_hash::SpookyHasher::new(seed, 0);
-        hasher.write(to_bytes(x));
-        hasher.finish()
-    }
-}
-#[cfg(feature = "hashers")]
-impl<Key> Hasher<Key> for Spooky128 {
-    type H = u128;
-    fn hash(x: &Key, seed: u64) -> u128 {
-        use std::hash::Hasher;
-        let mut hasher = hashers::jenkins::spooky_hash::SpookyHasher::new(seed, 0);
-        hasher.write(to_bytes(x));
-        let (l, h) = hasher.finish128();
-        (h as u128) << 64 | l as u128
-    }
-}
+int_hashers!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);

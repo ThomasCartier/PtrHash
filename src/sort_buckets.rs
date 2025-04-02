@@ -3,7 +3,7 @@ use crate::bucket_idx::BucketIdx;
 use rdst::RadixSort;
 use std::time::Instant;
 
-impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx, Vec<u8>> {
+impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: KeyHasher<Key>> PtrHash<Key, BF, F, Hx, Vec<u8>> {
     /// Returns:
     /// 1. Hashes
     /// 2. Start indices of each bucket.
@@ -162,6 +162,12 @@ impl<Key: KeyT, BF: BucketFn, F: Packed, Hx: Hasher<Key>> PtrHash<Key, BF, F, Hx
             order[bucket_len_cnt[l]] = b;
             bucket_len_cnt[l] += 1;
         }
+
+        // for i in 0..max_bucket_size {
+        //     if bucket_len_cnt[i] > 0 {
+        //         eprintln!("Bucket size {:>2}: {:>6}", i, bucket_len_cnt[i]);
+        //     }
+        // }
 
         (bucket_starts, order)
     }

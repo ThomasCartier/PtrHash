@@ -1,6 +1,9 @@
 use mem_dbg::MemSize;
 
-use crate::{hash::MulHash, util::mul_high};
+use crate::{
+    hash::{self},
+    util::mul_high,
+};
 
 pub trait Reduce: Copy + Sync + std::fmt::Debug {
     /// Reduce into the range [0, d).
@@ -47,9 +50,6 @@ impl Reduce for FastReduce {
 pub struct MulReduce {
     mask: u64,
 }
-impl MulReduce {
-    pub const C: u64 = MulHash::C;
-}
 impl Reduce for MulReduce {
     fn new(d: usize) -> Self {
         assert!(d.is_power_of_two(), "{d} is not a power of 2");
@@ -58,6 +58,6 @@ impl Reduce for MulReduce {
         }
     }
     fn reduce(self, h: u64) -> usize {
-        (mul_high(Self::C, h) & self.mask) as usize
+        (mul_high(hash::C, h) & self.mask) as usize
     }
 }

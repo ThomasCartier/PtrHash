@@ -5,11 +5,11 @@ use std::{cmp::min, collections::HashMap, hint::black_box, time::Instant};
 use cacheline_ef::CachelineEfVec;
 use ptr_hash::{
     bucket_fn::{BucketFn, CubicEps, Linear, Optimal, Skewed, Square},
-    hash::{FxHash, Hasher, Xx128, Xx64},
+    hash::{IntHash, KeyHasher, NoHash, RandomIntHash, StringHash, StringHash128, Xxh3Int},
     pack::{EliasFano, MutPacked},
     stats::BucketStats,
     util::{generate_keys, generate_string_keys},
-    KeyT, PtrHash, PtrHashParams, Sharding,
+    DefaultPtrHash, KeyT, PtrHash, PtrHashParams, Sharding,
 };
 use rand::{rng, Rng, RngCore};
 use rayon::iter::IntoParallelIterator;
@@ -33,7 +33,7 @@ fn main() {
 
     // query_throughput(); // 22min
 
-    // string_queries(); // 30min
+    string_queries(); // 30min
 }
 
 #[allow(unused)]
@@ -132,7 +132,7 @@ struct QueryResult {
 /// Collect stats on bucket sizes and number of evictions during construction.
 /// Vary the bucket assignment function.
 fn bucket_fn_stats() {
-    type MyPtrHash<BF> = PtrHash<u64, BF, CachelineEfVec, FxHash, Vec<u8>>;
+    type MyPtrHash<BF> = PtrHash<u64, BF, CachelineEfVec, IntHash, Vec<u8>>;
     let n = 1_000_000_000;
     let keys = &generate_keys(n);
 
@@ -180,7 +180,7 @@ fn size() {
         lambda: f64,
         bucket_fn: impl BucketFn,
     ) -> Option<Result> {
-        type MyPtrHash<BF, R> = PtrHash<u64, BF, R, FxHash, Vec<u8>>;
+        type MyPtrHash<BF, R> = PtrHash<u64, BF, R, IntHash, Vec<u8>>;
 
         let params = PtrHashParams {
             alpha,
@@ -256,7 +256,7 @@ fn remap() {
         lambda: f64,
         bucket_fn: impl BucketFn + Send,
     ) -> Result {
-        type MyPtrHash<BF, R> = PtrHash<u64, BF, R, FxHash, Vec<u8>>;
+        type MyPtrHash<BF, R> = PtrHash<u64, BF, R, IntHash, Vec<u8>>;
 
         let params = PtrHashParams {
             alpha,
@@ -368,7 +368,7 @@ fn sharding(sharding: Sharding, path: &str) {
     let keys = range.into_par_iter();
     let start = Instant::now();
     let bucket_fn = CubicEps;
-    let ptr_hash = PtrHash::<_, _, CachelineEfVec, Xx64>::new_from_par_iter(
+    let ptr_hash = <DefaultPtrHash>::new_from_par_iter(
         n,
         keys,
         PtrHashParams {
@@ -403,7 +403,7 @@ fn sharding(sharding: Sharding, path: &str) {
 
 fn query_batching() {
     fn test(keys: &Vec<u64>, params: PtrHashParams<impl BucketFn>, rs: &mut Vec<QueryResult>) {
-        type MyPtrHash<BF> = PtrHash<u64, BF, Vec<u32>, FxHash, Vec<u8>>;
+        type MyPtrHash<BF> = PtrHash<u64, BF, Vec<u32>, IntHash, Vec<u8>>;
         eprintln!("Building {params:?}");
         // Construct on 6 threads.
         let (ph, c6) = time(|| MyPtrHash::new(&keys, params));
@@ -461,7 +461,7 @@ fn query_batching() {
         rs.push(r.clone());
 
         fn batch<const A: usize, BF: BucketFn>(
-            ph: &PtrHash<u64, BF, Vec<u32>, FxHash, Vec<u8>>,
+            ph: &PtrHash<u64, BF, Vec<u32>, IntHash, Vec<u8>>,
             keys: &Vec<u64>,
             r: &QueryResult,
             rs: &mut Vec<QueryResult>,
@@ -587,7 +587,7 @@ fn query_throughput() {
         params: PtrHashParams<impl BucketFn>,
         rs: &mut Vec<QueryResult>,
     ) {
-        type MyPtrHash<BF, R> = PtrHash<u64, BF, R, FxHash, Vec<u8>>;
+        type MyPtrHash<BF, R> = PtrHash<u64, BF, R, IntHash, Vec<u8>>;
         eprintln!("Building {params:?}");
         // Construct on 6 threads.
         let (ph, c6) = time(|| MyPtrHash::<_, R>::new(&keys, params));
@@ -696,7 +696,7 @@ fn query_throughput() {
 }
 
 fn string_queries() {
-    fn test<R: MutPacked, K: KeyT, H: Hasher<K>>(
+    fn test<R: MutPacked, K: KeyT, H: KeyHasher<K>>(
         keys: &Vec<K>,
         params: PtrHashParams<impl BucketFn>,
         rs: &mut Vec<QueryResult>,
@@ -774,25 +774,30 @@ fn string_queries() {
 
     let mut results = vec![];
     // We can't fit 1G strings into memory, sadly.
-    for n in [100_000_000] {
+    for n in [1000, 1000000, 100_000_000] {
         type R = Vec<u32>;
 
         // INT
         {
             let keys: Vec<u64> = generate_keys(n);
 
-            test::<R, _, FxHash>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx64>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx128>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, NoHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, IntHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, RandomIntHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, Xxh3Int>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash128>(&keys, PARAMS_FAST, &mut results);
         }
+
+        continue;
 
         // BOXED INT
         {
             let keys: Vec<Box<u64>> = generate_keys(n).into_iter().map(|k| Box::new(k)).collect();
 
-            test::<R, _, FxHash>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx64>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx128>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, RandomIntHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash128>(&keys, PARAMS_FAST, &mut results);
         }
 
         // PACKED SHORT STRING
@@ -812,9 +817,9 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<R, _, FxHash>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx64>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx128>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, RandomIntHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash128>(&keys, PARAMS_FAST, &mut results);
         }
 
         // PACKED LONG STRING
@@ -834,9 +839,9 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<R, _, FxHash>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx64>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx128>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, RandomIntHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash128>(&keys, PARAMS_FAST, &mut results);
         }
 
         // PACKED RANDOM STRING
@@ -857,18 +862,18 @@ fn string_queries() {
                 .collect::<Vec<_>>();
             eprintln!("Keys size: {}", std::mem::size_of_val(keys.as_slice()));
 
-            test::<R, _, FxHash>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx64>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx128>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, RandomIntHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash128>(&keys, PARAMS_FAST, &mut results);
         }
 
         // STRING
         {
             let keys: Vec<Vec<u8>> = generate_string_keys(n);
 
-            test::<R, _, FxHash>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx64>(&keys, PARAMS_FAST, &mut results);
-            test::<R, _, Xx128>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, RandomIntHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash>(&keys, PARAMS_FAST, &mut results);
+            test::<R, _, StringHash128>(&keys, PARAMS_FAST, &mut results);
         }
     }
     write(&results, "data/string_queries.json");
