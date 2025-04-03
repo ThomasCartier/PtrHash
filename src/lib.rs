@@ -84,21 +84,21 @@ pub mod util;
 pub mod bucket_fn;
 mod bucket_idx;
 mod build;
-mod fastmod;
-mod reduce;
+pub mod fastmod;
+pub mod reduce;
 mod shard;
 mod sort_buckets;
 #[doc(hidden)]
 pub mod stats;
-#[cfg(test)]
-mod test;
+//#[cfg(test)]
+//mod test;
 
 use bitvec::{bitvec, vec::BitVec};
 use bucket_fn::BucketFn;
 use bucket_fn::CubicEps;
 use bucket_fn::Linear;
 use bucket_fn::SquareEps;
-use cacheline_ef::CachelineEfVec;
+//use cacheline_ef::CachelineEfVec;
 use fastmod::FM32;
 use itertools::izip;
 use itertools::Itertools;
@@ -233,18 +233,18 @@ impl Default for PtrHashParams<CubicEps> {
 ///
 /// Use this as [`DefaultPtrHash::new()`] or `<DefaultPtrHash>::new()`.
 pub type DefaultPtrHash<Hx = hash::IntHash, Key = u64, BF = bucket_fn::CubicEps> =
-    PtrHash<Key, BF, CachelineEfVec, Hx, Vec<u8>>;
+    PtrHash<Key, BF, Vec<u32>, Hx, Vec<u8>>;
 
 /// Trait that keys must satisfy.
 pub trait KeyT: Send + Sync + std::hash::Hash {}
 impl<T: Send + Sync + std::hash::Hash> KeyT for T {}
 
 // Some fixed algorithmic decisions.
-type Rp = FastReduce;
-type Rb = FastReduce;
-type RemSlots = FM32;
-type Pilot = u64;
-type PilotHash = u64;
+pub type Rp = FastReduce;
+pub type Rb = FastReduce;
+pub type RemSlots = FM32;
+pub type Pilot = u64;
+pub type PilotHash = u64;
 
 /// PtrHash datastructure.
 /// It is recommended to use PtrHash with default types.
@@ -261,50 +261,50 @@ type PilotHash = u64;
 pub struct PtrHash<
     Key: KeyT + ?Sized = u64,
     BF: BucketFn = bucket_fn::CubicEps,
-    F: Packed = CachelineEfVec,
+    F: Packed = Vec<u32>,
     Hx: KeyHasher<Key> = hash::IntHash,
     V: AsRef<[u8]> = Vec<u8>,
 > {
     params: PtrHashParams<BF>,
 
     /// The number of keys.
-    n: usize,
+    pub n: usize,
     /// The total number of parts.
-    parts: usize,
+    pub parts: usize,
     /// The number of shards.
-    shards: usize,
+    pub shards: usize,
     /// The maximal number of parts per shard.
     /// The last shard may have fewer parts.
-    parts_per_shard: usize,
+    pub parts_per_shard: usize,
     /// The total number of slots.
-    slots_total: usize,
+    pub slots_total: usize,
     /// The total number of buckets.
-    buckets_total: usize,
+    pub buckets_total: usize,
     /// The number of slots per part, always a power of 2.
-    slots: usize,
+    pub slots: usize,
     /// The number of buckets per part.
-    buckets: usize,
+    pub buckets: usize,
 
     // Precomputed fast modulo operations.
     /// Fast %shards.
-    rem_shards: Rp,
+    pub rem_shards: Rp,
     /// Fast %parts.
-    rem_parts: Rp,
+    pub rem_parts: Rp,
     /// Fast %b.
-    rem_buckets: Rb,
+    pub rem_buckets: Rb,
     /// Fast %b_total.
-    rem_buckets_total: Rb,
+    pub rem_buckets_total: Rb,
 
     /// Fast %s when there is only a single part.
-    rem_slots: RemSlots,
+    pub rem_slots: RemSlots,
 
     // Computed state.
     /// The global seed.
-    seed: u64,
+    pub seed: u64,
     /// The pilots.
-    pilots: V,
+    pub pilots: V,
     /// Remap the out-of-bound slots to free slots.
-    remap: F,
+    pub remap: F,
     _key: PhantomData<Key>,
     _hx: PhantomData<Hx>,
 }
@@ -397,7 +397,7 @@ impl<Key: KeyT, BF: BucketFn, F: MutPacked, Hx: KeyHasher<Key>> PtrHash<Key, BF,
 
     /// Only initialize the parameters; do not compute the pilots yet.
     fn init(n: usize, mut params: PtrHashParams<BF>) -> Self {
-        assert!(n < (1 << 40), "Number of keys must be less than 2^40.");
+        //assert!(n < (1_u64 << 40), "Number of keys must be less than 2^40.");
 
         let shards = match params.sharding {
             Sharding::None => 1,

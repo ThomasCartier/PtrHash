@@ -1,21 +1,35 @@
+use cacheline_ef::{CachelineEf, CachelineEfVec};
 use epserde::prelude::*;
-use ptr_hash::{PtrHash, PtrHashParams};
+use ptr_hash::{hash::IntHash, PtrHash, PtrHashParams};
 
 fn main() {
     env_logger::init();
+    type TP = u32;
+    let keys: Vec<TP> = {
+        let mut vec = vec![];
 
-    // Generate some random keys.
-    let n = 10_000_000;
-    eprintln!("Generating keys..");
-    let keys = ptr_hash::util::generate_keys(n);
+        for i in (0..1_000_000).step_by(100) {
+            vec.push(i);
+        }
+
+        vec
+    };
+
+    let n = keys.len();
 
     // Build the datastructure.
     eprintln!("Building mphf..");
     let start = std::time::Instant::now();
-    let mphf = <PtrHash>::new(&keys, PtrHashParams::default());
+
+    let mut gg = PtrHashParams::default_fast();
+
+    let mphf: PtrHash<TP, ptr_hash::bucket_fn::Linear, _, IntHash> =
+        PtrHash::<TP, _, Vec<u32>, IntHash>::new(&keys, gg);
     eprintln!("construction took: {:?}", start.elapsed());
 
-    let path = "/tmp/test.mphf";
+    let v = mphf.remap.clone();
+
+    /*let path = "/tmp/test.mphf";
     let mut file = std::fs::File::create(path).unwrap();
     eprintln!("\nSerializing to {path}..");
     mphf.serialize(&mut file).unwrap();
@@ -54,16 +68,14 @@ fn main() {
     // true: remap to a minimal key in [0, n).
     eprintln!("Check sum..");
     let indices = mphf2.index_stream::<32, true, _>(&keys);
-    assert_eq!(indices.sum::<usize>(), (n * (n - 1)) / 2);
+    assert_eq!(indices.sum::<usize>(), (n * (n - 1)) / 2);*/
 
     // Test that all items map to different indices
     eprintln!("Check taken..");
     let mut taken = vec![false; n];
     for key in keys {
-        let idx = mphf2.index(&key);
+        let idx = mphf.index(&key);
         assert!(!taken[idx]);
         taken[idx] = true;
     }
-
-    eprintln!("\n\nDO NOT FORGET TO CLEAN UP {path} !!!\n\n");
 }

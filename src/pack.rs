@@ -4,9 +4,9 @@
 //! This is implemented for `Vec<u8|u16|u32|u64>`, `CachelineEfVec`, and `EliasFano` from `sucds`.
 //! `Packed` is also implemented for respective non-owning (slice) types to support epserde.
 
-use sucds::mii_sequences::EliasFanoBuilder;
+//use sucds::mii_sequences::EliasFanoBuilder;
 
-use cacheline_ef::{CachelineEf, CachelineEfVec};
+//use cacheline_ef::{CachelineEf, CachelineEfVec};
 
 /// A trait for backing storage types.
 pub trait Packed: Sync {
@@ -85,6 +85,8 @@ slice_impl!(u16);
 slice_impl!(u32);
 slice_impl!(u64);
 
+/*
+
 impl MutPacked for CachelineEfVec<Vec<CachelineEf>> {
     fn default() -> Self {
         Default::default()
@@ -141,3 +143,4 @@ impl Packed for EliasFano {
         sucds::Serializable::size_in_bytes(&self.0)
     }
 }
+*/
